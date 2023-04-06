@@ -1,9 +1,14 @@
+use std::sync::{Arc};
 use http_body_util::Full;
 use hyper::{Request, Response};
 use hyper::body::Bytes;
+use crate::data::database::Database;
 use crate::handlers;
 
-pub async fn router(request: Request<hyper::body::Incoming>) -> anyhow::Result<Response<Full<Bytes>>> {
+pub async fn router(
+    request: Request<hyper::body::Incoming>,
+    database: &Arc<Database>
+) -> anyhow::Result<Response<Full<Bytes>>> {
     let (parts, body) = request.into_parts();
 
     let path_and_query = parts.uri.path_and_query();
@@ -22,6 +27,7 @@ pub async fn router(request: Request<hyper::body::Incoming>) -> anyhow::Result<R
     let handler_result = match path {
         "update_firebase_token" => handlers::update_firebase_token::handle(query, body).await,
         "send_test_push" => handlers::send_test_push::handle(query, body).await,
+        "watch_post" => handlers::send_test_push::handle(query, body).await,
         _ => handlers::index::handle(query, body).await
     };
 

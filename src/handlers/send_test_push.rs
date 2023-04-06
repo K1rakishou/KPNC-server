@@ -30,7 +30,7 @@ pub async fn handle(query: &str, body: Incoming) -> anyhow::Result<Response<Full
         .context("Failed to convert body into SendTestPushRequest")?;
 
     let firebase_api_key = std::env::var("FIREBASE_API_KEY")
-        .context("Failed to read firebase api key")?;
+        .context("Failed to read firebase api key from Environment")?;
 
     let email = request.email;
     info!("send_test_push() new request, email={}", email.clone());
