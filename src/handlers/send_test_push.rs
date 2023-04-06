@@ -1,12 +1,14 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use anyhow::Context;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};
 use hyper::Response;
-use tokio::sync::Mutex;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use crate::model::repository::account_repository::get_firebase_token;
+use crate::handlers::shared::{empty_success_response, error_response};
+use crate::model::database::db::Database;
+use crate::model::repository::account_repository::{get_account, UserId};
 
 lazy_static! {
     static ref client: fcm::Client = fcm::Client::new();
@@ -14,10 +16,14 @@ lazy_static! {
 
 #[derive(Serialize, Deserialize)]
 struct SendTestPushRequest {
-    email: String
+    user_id: String
 }
 
-pub async fn handle(query: &str, body: Incoming) -> anyhow::Result<Response<Full<Bytes>>> {
+pub async fn handle(
+    query: &str,
+    body: Incoming,
+    database: &Arc<Database>
+) -> anyhow::Result<Response<Full<Bytes>>> {
     let body_bytes = body.collect()
         .await
         .context("Failed to collect body")?
@@ -32,44 +38,51 @@ pub async fn handle(query: &str, body: Incoming) -> anyhow::Result<Response<Full
     let firebase_api_key = std::env::var("FIREBASE_API_KEY")
         .context("Failed to read firebase api key from Environment")?;
 
-    let email = request.email;
-    info!("send_test_push() new request, email={}", email.clone());
+    let user_id = UserId::from_str(&request.user_id);
+    info!("send_test_push() new request, user_id={}", user_id.clone());
 
-    let firebase_token = get_firebase_token(&email).await;
-    if firebase_token.is_none() {
+    let account = get_account(&database, &user_id)
+        .await?;
+
+    if account.is_none() {
+        let response_json = error_response("Account not found for this user_id")?;
+
         let response = Response::builder()
             .status(400)
-            .body(Full::new(Bytes::from("Account not found for email")))?;
+            .body(Full::new(Bytes::from(response_json)))?;
 
-        return Result::Ok(response);
+        return Ok(response);
     }
 
-    let firebase_token = firebase_token.unwrap();
+    let account = account.unwrap();
+    let firebase_token = account.firebase_token();
 
     let mut map = HashMap::new();
     map.insert("message_body", "Test push message");
 
-    let mut builder = fcm::MessageBuilder::new(firebase_api_key.as_str(), firebase_token.as_str());
+    let mut builder = fcm::MessageBuilder::new(firebase_api_key.as_str(), firebase_token.token.as_str());
     builder.data(&map)?;
 
     let response = client.send(builder.finalize()).await?;
     let error = response.error;
 
     if error.is_some() {
+        let response_json = error_response("Failed to send push message")?;
         error!("send_test_push() error: {:?}", error.unwrap());
 
         let response = Response::builder()
             .status(500)
-            .body(Full::new(Bytes::from("Failed to send push message")))?;
+            .body(Full::new(Bytes::from(response_json)))?;
 
-        return Result::Ok(response);
+        return Ok(response);
     }
 
-    info!("send_test_push() success");
+    let response_json = empty_success_response()?;
 
     let response = Response::builder()
         .status(200)
-        .body(Full::new(Bytes::from("Successfully sent push message")))?;
+        .body(Full::new(Bytes::from(response_json)))?;
 
+    info!("send_test_push() success");
     return Result::Ok(response);
 }

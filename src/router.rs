@@ -25,9 +25,9 @@ pub async fn router(
     let query = path_and_query.query().unwrap_or("");
 
     let handler_result = match path {
-        "update_firebase_token" => handlers::update_firebase_token::handle(query, body).await,
-        "send_test_push" => handlers::send_test_push::handle(query, body).await,
-        "watch_post" => handlers::send_test_push::handle(query, body).await,
+        "create_account" => handlers::create_account::handle(query, body, database).await,
+        "send_test_push" => handlers::send_test_push::handle(query, body, database).await,
+        // "watch_post" => handlers::send_test_push::handle(query, body).await,
         _ => handlers::index::handle(query, body).await
     };
 

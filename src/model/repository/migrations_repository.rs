@@ -4,8 +4,7 @@ use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
 use refinery::Migration;
 use tokio_postgres::{Row, Transaction};
-use sha3::{Digest, Sha3_512};
-use sha3::digest::FixedOutput;
+use crate::helpers::hashers::Sha3_512_Hashable;
 use crate::model::database::db::{Database, PgPooledConnection};
 
 mod embedded {
@@ -83,7 +82,7 @@ pub async fn perform_migrations(database: &Arc<Database>) -> anyhow::Result<()> 
         
         let version = migration.version() as i32;
         let name = String::from(migration.name());
-        let checksum = migration_checksum(migration_sql);
+        let checksum = migration_sql.sha3_512();
 
         transaction.execute(
             "INSERT INTO migrations (version, name, checksum) VALUES ($1, $2, $3)",
@@ -135,7 +134,7 @@ async fn check_migration_checksum_match(
     }
 
     let checksum_from_db: String = row.unwrap().get(0);
-    let checksum_calculated = migration_checksum(migration_sql);
+    let checksum_calculated = migration_sql.sha3_512();
     let migrations_match = checksum_from_db == checksum_calculated;
 
     info!(
@@ -147,12 +146,6 @@ async fn check_migration_checksum_match(
     );
 
     return Ok(migrations_match);
-}
-
-fn migration_checksum(migration_sql: &str) -> String {
-    let mut hasher = Sha3_512::new();
-    hasher.update(migration_sql);
-    return format!("{:x}", hasher.finalize_fixed());
 }
 
 async fn check_table_exists(

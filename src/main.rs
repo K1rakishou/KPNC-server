@@ -6,7 +6,6 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use log::LevelFilter;
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
 use crate::model::database::db::Database;
 use crate::model::repository::migrations_repository::perform_migrations;
 use crate::router::router;
@@ -18,6 +17,7 @@ mod model;
 mod service;
 mod router;
 mod handlers;
+mod helpers;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

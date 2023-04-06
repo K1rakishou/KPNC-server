@@ -1,3 +1,4 @@
 pub mod index;
-pub mod update_firebase_token;
+pub mod create_account;
 pub mod send_test_push;
+mod shared;
