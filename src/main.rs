@@ -7,14 +7,14 @@ use hyper::service::service_fn;
 use log::LevelFilter;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use crate::data::database::Database;
-use crate::data::migrations_repository::perform_migrations;
+use crate::model::database::db::Database;
+use crate::model::repository::migrations_repository::perform_migrations;
 use crate::router::router;
 
 #[macro_use]
 extern crate log;
 
-mod data;
+mod model;
 mod service;
 mod router;
 mod handlers;

@@ -8,15 +8,15 @@ lazy_static! {
 }
 
 struct Account {
-    email: String,
+    user_id: String,
     firebase_token: String,
     valid_until: Option<DateTime<Utc>>
 }
 
 impl Account {
-    pub fn new_with_token(email: String, firebase_token: String) -> Account {
+    pub fn new_with_token(user_id: String, firebase_token: String) -> Account {
         return Account {
-            email: email,
+            user_id,
             firebase_token,
             valid_until: Option::None
         }

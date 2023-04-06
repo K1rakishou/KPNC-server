@@ -1,4 +1,4 @@
-use crate::data::chan::ChanThread;
+use crate::model::data::chan::ChanThread;
 
 struct ThreadWatcher {
 

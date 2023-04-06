@@ -6,7 +6,7 @@ use hyper::Response;
 use tokio::sync::Mutex;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use crate::data::account_storage::get_firebase_token;
+use crate::model::repository::account_repository::get_firebase_token;
 
 lazy_static! {
     static ref client: fcm::Client = fcm::Client::new();

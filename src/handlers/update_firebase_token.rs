@@ -1,10 +1,9 @@
-use std::fmt::format;
 use anyhow::Context;
 use http_body_util::{BodyExt, Full};
-use hyper::{Request, Response};
+use hyper::{Response};
 use hyper::body::{Bytes, Incoming};
 use serde::{Deserialize, Serialize};
-use crate::data::account_storage::update_account_token;
+use crate::model::repository::account_repository::update_account_token;
 
 #[derive(Serialize, Deserialize)]
 struct UpdateFirebaseTokenRequest {

@@ -6,7 +6,7 @@ use refinery::Migration;
 use tokio_postgres::{Row, Transaction};
 use sha3::{Digest, Sha3_512};
 use sha3::digest::FixedOutput;
-use crate::data::database::{Database, PgPooledConnection};
+use crate::model::database::db::{Database, PgPooledConnection};
 
 mod embedded {
     use refinery::embed_migrations;
