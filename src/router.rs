@@ -22,10 +22,13 @@ pub async fn router(
         path = &path[1..];
     }
 
+    debug!("New request to \'{}\'", path);
     let query = path_and_query.query().unwrap_or("");
 
     let handler_result = match path {
         "create_account" => handlers::create_account::handle(query, body, database).await,
+        "update_firebase_token" => handlers::update_firebase_token::handle(query, body, database).await,
+        "get_account_info" => handlers::get_account_info::handle(query, body, database).await,
         "send_test_push" => handlers::send_test_push::handle(query, body, database).await,
         // "watch_post" => handlers::send_test_push::handle(query, body).await,
         _ => handlers::index::handle(query, body).await
@@ -40,11 +43,13 @@ pub async fn router(
             .map(|err| err.to_string())
             .unwrap_or(String::from("Unknown error"));
 
-        log::error!("Error: {:?}", handler_error);
+        log::error!("Request to {} error: {:?}", path, handler_error);
 
         let error_message = format!("Failed to process request, error: '{}'", handler_error_message);
         let response = Response::new(Full::new(Bytes::from(error_message)));
         return Ok(response);
+    } else {
+        debug!("Request to \'{}\' success", path);
     }
 
     return handler_result

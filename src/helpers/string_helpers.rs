@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use crate::model::repository::account_repository::{FirebaseToken, UserId};
+use crate::model::repository::account_repository::{FirebaseToken, AccountId};
 
 pub trait FormatToken {
     fn format_token(&self) -> Cow<str>;
@@ -49,7 +49,7 @@ impl FormatToken for String {
     }
 }
 
-impl FormatToken for UserId {
+impl FormatToken for AccountId {
     fn format_token(&self) -> Cow<str> {
         return self.id.format_token();
     }

@@ -1,0 +1,1 @@
+pub static USER_ID_HASH_ITERATIONS: usize = 16;

@@ -3,8 +3,11 @@ use hyper::{Response};
 use hyper::body::{Bytes, Incoming};
 
 pub async fn handle(query: &str, _: Incoming) -> anyhow::Result<Response<Full<Bytes>>> {
-    let firebase_api_key = std::env::var("FIREBASE_API_KEY")?;
-    let response = format!("query='{}', firebase_api_key='{}'", query, firebase_api_key);
+    let response = format!("This is the index page!");
 
-    return Ok(Response::new(Full::new(Bytes::from(response))))
+    let response = Response::builder()
+        .status(200)
+        .body(Full::new(Bytes::from(response)))?;
+
+    return Ok(response)
 }

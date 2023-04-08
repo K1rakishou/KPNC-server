@@ -1,5 +1,6 @@
 use std::env;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 use anyhow::Context;
 use hyper::server::conn::http1;
@@ -13,6 +14,7 @@ use crate::router::router;
 #[macro_use]
 extern crate log;
 
+mod constants;
 mod model;
 mod service;
 mod router;
@@ -21,9 +23,8 @@ mod helpers;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    env_logger::builder()
-        .filter_level(LevelFilter::Info)
-        .init();
+    let is_dev_build = i32::from_str(&env::var("DEVELOPMENT_BUILD")?)? == 1;
+    init_logger(is_dev_build);
 
     info!("main() initializing the server");
 
@@ -67,4 +68,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         });
     }
+}
+
+fn init_logger(is_dev_build: bool) {
+    let level_filter = if is_dev_build {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Info
+    };
+
+    env_logger::builder()
+        .filter_level(level_filter)
+        .init();
 }

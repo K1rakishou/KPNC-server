@@ -6,12 +6,12 @@ use hyper::body::{Bytes, Incoming};
 use serde::{Deserialize, Serialize};
 use crate::handlers::shared::{ContentType, empty_success_response, error_response_string};
 use crate::model::database::db::Database;
-use crate::model::repository::account_repository::{CreateAccountResult, FirebaseToken, AccountId};
-use crate::helpers::string_helpers::FormatToken;
 use crate::model::repository::account_repository;
+use crate::model::repository::account_repository::{FirebaseToken, UpdateFirebaseTokenResult, AccountId};
+use crate::helpers::string_helpers::FormatToken;
 
 #[derive(Deserialize)]
-struct CreateNewAccountRequest {
+struct UpdateFirebaseTokenRequest {
     email: String,
     firebase_token: String
 }
@@ -29,28 +29,26 @@ pub async fn handle(
     let body_as_string = String::from_utf8(body_bytes.to_vec())
         .context("Failed to convert body into a string")?;
 
-    let request: CreateNewAccountRequest = serde_json::from_str(body_as_string.as_str())
-        .context("Failed to convert body into CreateNewAccountRequest")?;
+    let request: UpdateFirebaseTokenRequest = serde_json::from_str(body_as_string.as_str())
+        .context("Failed to convert body into UpdateFirebaseTokenRequest")?;
 
     // TODO: account_id validation
     let account_id = AccountId::from_str(&request.email);
     // TODO: firebase_token validation
     let firebase_token = FirebaseToken::from_str(&request.firebase_token);
-    let valid_until = chrono::offset::Utc::now() + chrono::Duration::days(180);
 
-    // TODO: only allow creating new accounts for requests with special header
-    let result = account_repository::create_account(database, &account_id, &firebase_token, Some(&valid_until))
+    let result = account_repository::update_firebase_token(database, &account_id, &firebase_token)
         .await
-        .context(format!("Failed to created account for account with account_id: \'{}\'", account_id))?;
+        .context(format!("Failed to update firebase token for account with id \'{}\'", account_id))?;
 
-    if result != CreateAccountResult::Ok {
+    if result != UpdateFirebaseTokenResult::Ok {
         let error_message = match result {
-            CreateAccountResult::Ok => unreachable!(),
-            CreateAccountResult::AccountAlreadyExists => "Account already exists"
+            UpdateFirebaseTokenResult::Ok => unreachable!(),
+            UpdateFirebaseTokenResult::AccountDoesNotExist => "Account does not exist"
         };
 
         let full_error_message = format!(
-            "Failed to create a new account for account_id \'{}\': \"{}\"",
+            "Failed to update firebase token for account for account_id \'{}\': \"{}\"",
             account_id,
             error_message
         );
@@ -74,10 +72,9 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     info!(
-        "Successfully created new account. account_id: \'{}\', firebase_token: \'{}\', valid_until: {:?}",
+        "Successfully updated firebase_token. account_id: \'{}\', firebase_token: \'{}\'",
         account_id,
-        firebase_token.format_token(),
-        valid_until
+        firebase_token.format_token()
     );
 
     return Ok(response);
