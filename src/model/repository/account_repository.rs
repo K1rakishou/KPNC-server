@@ -148,7 +148,17 @@ pub async fn get_account(
     }
 
     let connection = database.connection().await?;
-    let statement = connection.prepare("SELECT * FROM accounts WHERE accounts.account_id = $1").await?;
+    
+    let query = r#"
+    SELECT 
+        accounts.account_id, 
+        accounts.firebase_token, 
+        accounts.valid_until 
+    FROM accounts 
+    WHERE accounts.account_id = $1
+"#;
+    
+    let statement = connection.prepare(query).await?;
 
     let row = connection.query_opt(&statement, &[&account_id.id]).await?;
     if row.is_none() {

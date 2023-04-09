@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use anyhow::Context;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::AccountId;
@@ -82,13 +83,17 @@ pub async fn get_all_watched_threads(
     let connection = database.connection().await?;
 
     let query = r#"
-    SELECT posts.site_name,
-       posts.board_code,
-       posts.thread_no
-    FROM posts
-    WHERE posts.is_dead = FALSE
-      AND posts.deleted_on is NULL
-    GROUP BY posts.site_name, posts.board_code, posts.thread_no
+        SELECT
+            posts.site_name,
+            posts.board_code,
+            posts.thread_no
+        FROM
+            posts
+        WHERE
+            posts.is_dead = FALSE
+        AND
+            posts.deleted_on is NULL
+        GROUP BY posts.site_name, posts.board_code, posts.thread_no
 "#;
 
     let rows = connection.query(query, &[]).await?;
@@ -103,4 +108,35 @@ pub async fn get_all_watched_threads(
     }
 
     return Ok(thread_descriptors);
+}
+
+pub async fn mark_all_thread_posts_dead(
+    database: &Arc<Database>,
+    thread_descriptor: &ThreadDescriptor
+) -> anyhow::Result<()> {
+    let connection = database.connection().await?;
+
+    let query = r#"
+        UPDATE posts
+        SET is_dead = TRUE
+        WHERE
+            posts.site_name = $1
+        AND
+            posts.board_code = $2
+        AND
+            posts.thread_no = $3
+"#;
+
+    connection.execute(
+        query,
+        &[
+            thread_descriptor.site_name(),
+            thread_descriptor.board_code(),
+            &(thread_descriptor.thread_no as i64)
+        ]
+    )
+        .await
+        .context(format!("Failed to update is_dead flag for thread {}", thread_descriptor))?;
+
+    return Ok(());
 }

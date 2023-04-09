@@ -152,7 +152,7 @@ async fn check_table_exists(
     connection: &PgPooledConnection<'_>,
     table_name: &str
 ) -> anyhow::Result<bool> {
-    let sql = r#"
+    let query = r#"
 SELECT
     COUNT(table_name)
 FROM
@@ -163,7 +163,7 @@ WHERE
 	table_name = $1;
 "#;
 
-    let statement = connection.prepare(sql).await?;
+    let statement = connection.prepare(query).await?;
 
     let row = connection.query_opt(&statement, &[&table_name]).await?;
     if row.is_none() {

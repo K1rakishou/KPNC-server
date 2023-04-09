@@ -21,11 +21,38 @@ struct ChanThread {
     posts: Vec<ChanPost>
 }
 
+impl ChanThread {
+    pub fn get_original_post(&self) -> Option<&ChanPost> {
+        for post in &self.posts {
+            if post.is_op() {
+                return Some(&post);
+            }
+        }
+
+        return None;
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct ChanPost {
     no: u64,
+    resto: u64,
     closed: Option<i32>,
+    archived: Option<i32>,
     com: Option<String>
+}
+
+impl ChanPost {
+    pub fn is_op(&self) -> bool {
+        return self.resto == 0;
+    }
+
+    pub fn is_not_active(&self) -> bool {
+        let closed = self.closed.unwrap_or(0);
+        let archived = self.archived.unwrap_or(0);
+
+        return closed == 1 || archived == 1;
+    }
 }
 
 impl ThreadWatcher {
@@ -146,8 +173,12 @@ async fn process_thread(
 ) -> anyhow::Result<()> {
     let thread_json_endpoint = site_repository.thread_json_endpoint(thread_descriptor);
     if thread_json_endpoint.is_none() {
-        error!("process_thread({}) thread_descriptor is not supported", thread_descriptor);
-        // TODO: mark all posts in this thread as dead or deleted in the database
+        error!(
+            "process_thread({}) marking thread as dead because the site is not supported",
+            thread_descriptor
+        );
+
+        posts_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
         return Ok(());
     }
 
@@ -167,7 +198,12 @@ async fn process_thread(
         error!("process_thread({}) bad status code {}", thread_descriptor, status_code);
 
         if status_code == 404 {
-            // TODO: mark all posts in this thread as deleted
+            error!(
+                "process_thread({}) marking thread as dead because status code is 404",
+                thread_descriptor
+            );
+
+            posts_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
         }
 
         return Ok(());
@@ -213,8 +249,35 @@ async fn process_thread(
     }
 
     let chan_thread = chan_thread.unwrap();
+
+    let original_post = chan_thread.get_original_post();
+    if original_post.is_none() {
+        let posts_count = chan_thread.posts.len();
+        error!(
+            "process_thread({}) thread has no original post, posts_count: {}",
+            thread_descriptor,
+            posts_count
+        );
+
+        return Ok(());
+    }
+
+    let original_post = original_post.unwrap();
+    if original_post.is_not_active() {
+        info!(
+            "process_thread({}) marking thread as dead it's either archived or closed \
+            (archived: {}, closed: {})",
+            thread_descriptor,
+            original_post.archived.unwrap_or(0) == 1,
+            original_post.closed.unwrap_or(0) == 1,
+        );
+
+        posts_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+        return Ok(());
+    }
+
     debug!("process_thread({}) got thread with {} posts", thread_descriptor, chan_thread.posts.len());
-    debug!("process_thread({}) OP: {:?}", thread_descriptor, chan_thread.posts.first().unwrap());
+    debug!("process_thread({}) OP: {:?}", thread_descriptor, original_post);
 
     return Ok(());
 }
