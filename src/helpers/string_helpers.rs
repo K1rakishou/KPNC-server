@@ -60,3 +60,21 @@ impl FormatToken for FirebaseToken {
         return self.token.format_token();
     }
 }
+
+pub fn extract_site_name_from_domain(domain: &str) -> &str {
+    let last_index = domain.rfind('.');
+    if last_index.is_none() {
+        return domain;
+    }
+    let last_index = last_index.unwrap();
+
+    let domain = &domain[0..last_index];
+
+    let last_index = domain.rfind('.');
+    if last_index.is_none() {
+        return domain;
+    }
+    let last_index = last_index.unwrap();
+
+    return &domain[last_index + 1..];
+}

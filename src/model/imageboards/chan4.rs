@@ -2,6 +2,7 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 use regex::Regex;
 use url::Url;
+use crate::helpers::string_helpers;
 use crate::model::data::chan::{PostDescriptor, SiteDescriptor, ThreadDescriptor};
 use crate::model::imageboards::base_imageboard::Imageboard;
 
@@ -32,13 +33,18 @@ impl Imageboard for Chan4 {
 
         let url = url.unwrap();
 
-        let host = url.host();
-        if host.is_none() {
+        let domain = url.domain();
+        if domain.is_none() {
             return false;
         }
 
-        let host = host.unwrap().to_string().to_lowercase();
-        return host == "4chan" || host == "4channel";
+        let site_name = string_helpers::extract_site_name_from_domain(domain.unwrap());
+        if site_name.is_empty() {
+            return false
+        }
+
+        let site_name = site_name.to_string().to_lowercase();
+        return site_name == "4chan" || site_name == "4channel";
     }
 
     fn post_url_to_post_descriptor(&self, post_url: &str) -> Option<PostDescriptor> {

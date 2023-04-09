@@ -7,7 +7,7 @@ pub async fn start_watching_post(
     database: &Arc<Database>,
     account_id: &AccountId,
     post_descriptor: &PostDescriptor
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let mut connection = database.connection().await?;
     let transaction = connection.transaction().await?;
 
@@ -27,11 +27,12 @@ pub async fn start_watching_post(
             post_sub_no,
             is_dead
         )
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING RETURNING id_generated
-        "#;
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (site_name, board_code, thread_no, post_no, post_sub_no)
+        DO UPDATE SET site_name = $1
+        RETURNING id_generated
+"#;
 
-    // TODO: this fails to execute when trying to insert the same data twice.
-    //  "ON CONFLICT DO NOTHING" doesn't work?
     let owner_post_id: i64 = transaction.query_one(
         query,
         &[
@@ -50,19 +51,29 @@ pub async fn start_watching_post(
             owner_account_id
         )
         VALUES ($1, $2)
-        "#;
+        ON CONFLICT DO NOTHING
+        RETURNING id_generated
+"#;
 
-    transaction.execute(
+    let new_watch_inserted = transaction.query_opt(
         query,
         &[
             &owner_post_id,
             &owner_account_id
         ]
-    ).await?;
+    ).await?.is_some();
+
+    if !new_watch_inserted {
+        transaction.rollback().await?;
+
+        debug!("start_watching_post() Post watch {} already exists in the database", post_descriptor);
+        return Ok(false);
+    }
 
     transaction.commit().await?;
+    debug!("start_watching_post() Created new post watch for post {}", post_descriptor);
 
-    return Ok(());
+    return Ok(true);
 }
 
 pub async fn get_all_watched_threads(

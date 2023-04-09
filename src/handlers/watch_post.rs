@@ -70,7 +70,7 @@ pub async fn handle(
 
     let post_descriptor = post_descriptor.unwrap();
 
-    posts_repository::start_watching_post(
+    let post_watch_created = posts_repository::start_watching_post(
         database,
         &account_id,
         &post_descriptor
@@ -83,11 +83,19 @@ pub async fn handle(
         .status(200)
         .body(Full::new(Bytes::from(response_json)))?;
 
-    info!(
-        "Successfully started watching post {} for account {}",
-        post_descriptor,
-        account_id
-    );
+    if post_watch_created {
+        info!(
+            "Successfully started watching post {} for account {}",
+            post_descriptor,
+            account_id
+        );
+    } else {
+        info!(
+            "Post watch for post {} and account id {} was not created because it already exists",
+            post_descriptor,
+            account_id
+        );
+    }
 
     return Ok(response);
 }
