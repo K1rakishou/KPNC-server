@@ -32,10 +32,8 @@ pub async fn handle(
     let request: CreateNewAccountRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into CreateNewAccountRequest")?;
 
-    // TODO: account_id validation
-    let account_id = AccountId::from_str(&request.email);
-    // TODO: firebase_token validation
-    let firebase_token = FirebaseToken::from_str(&request.firebase_token);
+    let account_id = AccountId::from_str(&request.email)?;
+    let firebase_token = FirebaseToken::from_str(&request.firebase_token)?;
     let valid_until = chrono::offset::Utc::now() + chrono::Duration::days(180);
 
     // TODO: only allow creating new accounts for requests with special header

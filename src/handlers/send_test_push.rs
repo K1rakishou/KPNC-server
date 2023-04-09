@@ -39,7 +39,7 @@ pub async fn handle(
     let firebase_api_key = std::env::var("FIREBASE_API_KEY")
         .context("Failed to read firebase api key from Environment")?;
 
-    let account_id = AccountId::from_str(&request.email);
+    let account_id = AccountId::from_str(&request.email)?;
 
     let account = get_account(&database, &account_id)
         .await?;

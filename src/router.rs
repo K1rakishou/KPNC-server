@@ -4,10 +4,12 @@ use hyper::{Request, Response};
 use hyper::body::Bytes;
 use crate::model::database::db::Database;
 use crate::handlers;
+use crate::model::repository::site_repository::SiteRepository;
 
 pub async fn router(
     request: Request<hyper::body::Incoming>,
-    database: &Arc<Database>
+    database: &Arc<Database>,
+    site_repository: &Arc<SiteRepository>,
 ) -> anyhow::Result<Response<Full<Bytes>>> {
     let (parts, body) = request.into_parts();
 
@@ -30,7 +32,7 @@ pub async fn router(
         "update_firebase_token" => handlers::update_firebase_token::handle(query, body, database).await,
         "get_account_info" => handlers::get_account_info::handle(query, body, database).await,
         "send_test_push" => handlers::send_test_push::handle(query, body, database).await,
-        // "watch_post" => handlers::send_test_push::handle(query, body).await,
+        "watch_post" => handlers::watch_post::handle(query, body, database, site_repository).await,
         _ => handlers::index::handle(query, body).await
     };
 

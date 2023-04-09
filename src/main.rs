@@ -2,14 +2,15 @@ use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use anyhow::Context;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use log::LevelFilter;
 use tokio::net::TcpListener;
 use crate::model::database::db::Database;
 use crate::model::repository::migrations_repository::perform_migrations;
+use crate::model::repository::site_repository::SiteRepository;
 use crate::router::router;
+use crate::service::thread_watcher::ThreadWatcher;
 
 #[macro_use]
 extern crate log;
@@ -32,9 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("main() detected cpu cores: {}", num_cpus);
 
     info!("main() initializing database...");
-    let connection_string = env::var("DATABASE_CONNECTION_STRING")
-        .context("Failed to read database connection string from Environment")?;
-    let database = Database::new(connection_string, num_cpus).await?;
+    let database = Database::new(num_cpus).await?;
     let database = Arc::new(database);
     info!("main() initializing database... done");
 
@@ -45,17 +44,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("main() starting up server...");
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = TcpListener::bind(addr).await?;
-    info!("main() starting up server... done");
 
-    info!("main() waiting for connections...");
+    let site_repository = Arc::new(SiteRepository::new());
+    let database_cloned_for_watcher = database.clone();
+    let site_repository_for_watcher = site_repository.clone();
+
+    tokio::task::spawn(async move {
+        let mut thread_watcher = ThreadWatcher::new(num_cpus);
+
+        thread_watcher.start(
+            &database_cloned_for_watcher,
+            &site_repository_for_watcher
+        ).await.unwrap();
+    });
+
+    info!("main() starting up server... done, waiting for connections...");
 
     loop {
         let (stream, sock_addr) = listener.accept().await?;
-        let database_cloned = database.clone();
+        let database_cloned_for_router = database.clone();
+        let site_repository_cloned = site_repository.clone();
 
         tokio::task::spawn(async move {
             let result = http1::Builder::new()
-                .serve_connection(stream, service_fn(|request| { router(request, &database_cloned) }))
+                .serve_connection(
+                    stream,
+                    service_fn(|request| {
+                        return router(request, &database_cloned_for_router, &site_repository_cloned);
+                    }),
+                )
                 .await;
 
             if result.is_err() {

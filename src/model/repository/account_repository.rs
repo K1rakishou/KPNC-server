@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 use lazy_static::lazy_static;
@@ -45,8 +45,13 @@ pub enum UpdateFirebaseTokenResult {
 }
 
 impl AccountId {
-    pub fn from_str(value: &str) -> AccountId {
-        return AccountId { id: value.sha3_512(constants::USER_ID_HASH_ITERATIONS) }
+    pub fn from_str(email: &str) -> anyhow::Result<AccountId> {
+        if email.len() == 0 || email.len() > 128 {
+            return Err(anyhow!("Bad email length {} must be within 0..128", email.len()));
+        }
+
+        let account_id = AccountId { id: email.sha3_512(constants::USER_ID_HASH_ITERATIONS) };
+        return Ok(account_id);
     }
 }
 
@@ -57,8 +62,13 @@ impl Display for AccountId {
 }
 
 impl FirebaseToken {
-    pub fn from_str(value: &str) -> FirebaseToken {
-        return FirebaseToken { token: String::from(value) }
+    pub fn from_str(token: &str) -> anyhow::Result<FirebaseToken> {
+        if token.len() == 0 || token.len() > 1024 {
+            return Err(anyhow!("Bad token length {} must be within 0..128", token.len()));
+        }
+
+        let firebase_token = FirebaseToken { token: String::from(token) };
+        return Ok(firebase_token);
     }
 }
 
@@ -113,8 +123,8 @@ impl Account {
         let valid_until: Option<DateTime<Utc>> = row.try_get(2)?;
 
         let account = Account {
-            account_id: AccountId::from_str(&account_id),
-            firebase_token: FirebaseToken::from_str(&firebase_token),
+            account_id: AccountId::from_str(&account_id)?,
+            firebase_token: FirebaseToken::from_str(&firebase_token)?,
             valid_until
         };
 

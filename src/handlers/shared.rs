@@ -1,5 +1,7 @@
+use anyhow::anyhow;
 use hyper::http::response::Builder;
 use serde::{Deserialize, Serialize};
+use crate::constants;
 
 #[derive(Serialize, Deserialize)]
 pub struct ServerResponse<T> {
@@ -68,4 +70,16 @@ impl ContentType for Builder {
     fn json(self) -> Builder {
         return self.content_type("application/json")
     }
+}
+
+pub fn validate_post_url(post_url: &String) -> anyhow::Result<&String> {
+    if post_url.is_empty() {
+        return Err(anyhow!("post_url is empty"));
+    }
+
+    if post_url.len() > constants::MAX_POST_URL_LENGTH {
+        return Err(anyhow!("post_url is too long"));
+    }
+
+    return Ok(post_url);
 }

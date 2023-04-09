@@ -32,10 +32,8 @@ pub async fn handle(
     let request: UpdateFirebaseTokenRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into UpdateFirebaseTokenRequest")?;
 
-    // TODO: account_id validation
-    let account_id = AccountId::from_str(&request.email);
-    // TODO: firebase_token validation
-    let firebase_token = FirebaseToken::from_str(&request.firebase_token);
+    let account_id = AccountId::from_str(&request.email)?;
+    let firebase_token = FirebaseToken::from_str(&request.firebase_token)?;
 
     let result = account_repository::update_firebase_token(database, &account_id, &firebase_token)
         .await

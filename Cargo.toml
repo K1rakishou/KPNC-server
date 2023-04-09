@@ -1,11 +1,12 @@
 [package]
-name = "kurobaex-push-notification-server"
+name = "kpns"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0.70"
 hyper = { version = "1.0.0-rc.3", features = ["full"] }
+reqwest = "0.11.16"
 tokio = { version = "1", features = ["full"] }
 http-body-util = "0.1.0-rc.2"
 serde_json = "1.0.95"
@@ -21,3 +22,6 @@ bb8 = "0.8.0"
 bb8-postgres = "0.8.1"
 num_cpus = "1.15.0"
 sha3 = "0.10.6"
+regex = "1.7.3"
+futures = "0.3.28"
+url = "2.3.1"
