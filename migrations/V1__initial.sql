@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS accounts
 (
     id_generated   BIGSERIAL,
     account_id     VARCHAR(128),
-    firebase_token VARCHAR(1024),
+    firebase_token VARCHAR(1024) DEFAULT NULL,
     valid_until    TIMESTAMP WITH TIME ZONE DEFAULT NULL,
     created_on     TIMESTAMP WITH TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     deleted_on     TIMESTAMP WITH TIME ZONE DEFAULT NULL,

@@ -3,17 +3,15 @@ use anyhow::Context;
 use http_body_util::{BodyExt, Full};
 use hyper::{Response};
 use hyper::body::{Bytes, Incoming};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use crate::handlers::shared::{ContentType, empty_success_response, error_response_string};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::{CreateAccountResult, FirebaseToken, AccountId};
-use crate::helpers::string_helpers::FormatToken;
 use crate::model::repository::account_repository;
 
 #[derive(Deserialize)]
 struct CreateNewAccountRequest {
-    email: String,
-    firebase_token: String
+    email: String
 }
 
 pub async fn handle(
@@ -32,12 +30,11 @@ pub async fn handle(
     let request: CreateNewAccountRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into CreateNewAccountRequest")?;
 
-    let account_id = AccountId::from_str(&request.email)?;
-    let firebase_token = FirebaseToken::from_str(&request.firebase_token)?;
+    let account_id = AccountId::from_email(&request.email)?;
     let valid_until = chrono::offset::Utc::now() + chrono::Duration::days(180);
 
     // TODO: only allow creating new accounts for requests with special header
-    let result = account_repository::create_account(database, &account_id, &firebase_token, Some(&valid_until))
+    let result = account_repository::create_account(database, &account_id, Some(&valid_until))
         .await
         .context(format!("Failed to created account for account with account_id: \'{}\'", account_id))?;
 
@@ -72,9 +69,8 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     info!(
-        "Successfully created new account. account_id: \'{}\', firebase_token: \'{}\', valid_until: {:?}",
+        "Successfully created new account. account_id: \'{}\', valid_until: {:?}",
         account_id,
-        firebase_token.format_token(),
         valid_until
     );
 

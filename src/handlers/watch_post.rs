@@ -33,7 +33,7 @@ pub async fn handle(
     let request: WatchPostRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into WatchPostRequest")?;
 
-    let account_id = AccountId::from_str(&request.email)?;
+    let account_id = AccountId::from_email(&request.email)?;
     let post_url = validate_post_url(&request.post_url)?;
 
     let imageboard = site_repository.by_url(post_url);

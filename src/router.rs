@@ -31,7 +31,6 @@ pub async fn router(
         "create_account" => handlers::create_account::handle(query, body, database).await,
         "update_firebase_token" => handlers::update_firebase_token::handle(query, body, database).await,
         "get_account_info" => handlers::get_account_info::handle(query, body, database).await,
-        "send_test_push" => handlers::send_test_push::handle(query, body, database).await,
         "watch_post" => handlers::watch_post::handle(query, body, database, site_repository).await,
         _ => handlers::index::handle(query, body).await
     };

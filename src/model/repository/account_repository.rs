@@ -18,7 +18,7 @@ lazy_static! {
 #[derive(Clone)]
 pub struct Account {
     account_id: AccountId,
-    firebase_token: FirebaseToken,
+    firebase_token: Option<FirebaseToken>,
     pub valid_until: Option<DateTime<Utc>>
 }
 
@@ -45,8 +45,16 @@ pub enum UpdateFirebaseTokenResult {
 }
 
 impl AccountId {
-    pub fn from_str(email: &str) -> anyhow::Result<AccountId> {
-        if email.len() == 0 || email.len() > 128 {
+    pub fn new(account_id: String) -> AccountId {
+        if account_id.len() != 128 {
+            panic!("Bad account_id len {}", account_id.len());
+        }
+
+        return AccountId { id: account_id };
+    }
+
+    pub fn from_email(email: &str) -> anyhow::Result<AccountId> {
+        if email.len() == 0 || email.len() > 100 {
             return Err(anyhow!("Bad email length {} must be within 0..128", email.len()));
         }
 
@@ -70,6 +78,21 @@ impl FirebaseToken {
         let firebase_token = FirebaseToken { token: String::from(token) };
         return Ok(firebase_token);
     }
+
+    pub fn from_opt_str(token: Option<&str>) -> anyhow::Result<Option<FirebaseToken>> {
+        if token.is_none() {
+            return Ok(None);
+        }
+
+        let token = token.unwrap();
+
+        if token.len() == 0 || token.len() > 1024 {
+            return Err(anyhow!("Bad token length {} must be within 0..128", token.len()));
+        }
+
+        let firebase_token = FirebaseToken { token: String::from(token) };
+        return Ok(Some(firebase_token));
+    }
 }
 
 impl Display for FirebaseToken {
@@ -82,7 +105,13 @@ impl Display for Account {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Account(")?;
         write!(f, "account_id: {}, ", self.account_id)?;
-        write!(f, "firebase_token: {}, ", self.firebase_token)?;
+
+        if self.firebase_token.is_some() {
+            write!(f, "firebase_token: {}, ", self.firebase_token.clone().unwrap())?;
+        } else {
+            write!(f, "firebase_token: None, ")?;
+        }
+
         write!(f, "valid_until: {:?}, ", self.valid_until)?;
         write!(f, ")")?;
         return Ok(());
@@ -90,13 +119,13 @@ impl Display for Account {
 }
 
 impl Account {
-    pub fn firebase_token(&self) -> &FirebaseToken {
-        return &self.firebase_token
+    pub fn firebase_token(&self) -> Option<&FirebaseToken> {
+        return self.firebase_token.as_ref()
     }
 
     pub fn new(
         account_id: AccountId,
-        firebase_token: FirebaseToken,
+        firebase_token: Option<FirebaseToken>,
         valid_until: Option<DateTime<Utc>>
     ) -> Account {
         return Account {
@@ -108,7 +137,7 @@ impl Account {
 
     pub fn new_with_token(
         account_id: AccountId,
-        firebase_token: FirebaseToken
+        firebase_token: Option<FirebaseToken>
     ) -> Account {
         return Account {
             account_id,
@@ -119,12 +148,19 @@ impl Account {
 
     pub fn from_row(row: &Row) -> anyhow::Result<Account> {
         let account_id: String = row.try_get(0)?;
-        let firebase_token: String = row.try_get(1)?;
+
+        let firebase_token_result = row.try_get(1);
+        let firebase_token: Option<&str> = if firebase_token_result.is_err() {
+            None
+        } else {
+            Some(firebase_token_result.unwrap())
+        };
+
         let valid_until: Option<DateTime<Utc>> = row.try_get(2)?;
 
         let account = Account {
-            account_id: AccountId::from_str(&account_id)?,
-            firebase_token: FirebaseToken::from_str(&firebase_token)?,
+            account_id: AccountId::new(account_id),
+            firebase_token: FirebaseToken::from_opt_str(firebase_token)?,
             valid_until
         };
 
@@ -144,20 +180,20 @@ pub async fn get_account(
     };
 
     if from_cache.is_some() {
-        return Ok(from_cache);
+        return Ok(Some(from_cache.unwrap()));
     }
 
     let connection = database.connection().await?;
-    
+
     let query = r#"
-    SELECT 
-        accounts.account_id, 
-        accounts.firebase_token, 
-        accounts.valid_until 
-    FROM accounts 
-    WHERE accounts.account_id = $1
+        SELECT
+            accounts.account_id,
+            accounts.firebase_token,
+            accounts.valid_until
+        FROM accounts
+        WHERE accounts.account_id = $1
 "#;
-    
+
     let statement = connection.prepare(query).await?;
 
     let row = connection.query_opt(&statement, &[&account_id.id]).await?;
@@ -170,21 +206,19 @@ pub async fn get_account(
         return Err(account.err().unwrap());
     }
 
-    let account = {
-        let account = account.unwrap();
-        let mut cache = accounts_cache.write().await;
+    let account = account.unwrap();
 
+    {
+        let mut cache = accounts_cache.write().await;
         cache.insert(account.account_id.clone(), account.clone());
-        cache.get(&account.account_id).cloned()
     };
 
-    return Ok(account);
+    return Ok(Some(account));
 }
 
 pub async fn create_account(
     database: &Arc<Database>,
     account_id: &AccountId,
-    firebase_token: &FirebaseToken,
     valid_until: Option<&DateTime<Utc>>
 ) -> anyhow::Result<CreateAccountResult> {
     let existing_account = get_account(database, account_id).await?;
@@ -196,12 +230,12 @@ pub async fn create_account(
     let connection = database.connection().await?;
 
     let statement = connection
-        .prepare("INSERT INTO accounts(account_id, firebase_token, valid_until) VALUES ($1, $2, $3)")
+        .prepare("INSERT INTO accounts(account_id, valid_until) VALUES ($1, $2)")
         .await?;
 
     connection.execute(
         &statement,
-        &[&account_id.id, &firebase_token.token, &valid_until]
+        &[&account_id.id, &valid_until]
     ).await?;
 
     {
@@ -209,18 +243,16 @@ pub async fn create_account(
 
         let existing_account = accounts_locked.get_mut(account_id);
         if existing_account.is_some() {
-            let mut existing_account = existing_account.unwrap();
-            existing_account.firebase_token = firebase_token.clone();
-            existing_account.valid_until = valid_until.cloned();
-        } else {
-            let new_account = Account::new(
-                account_id.clone(),
-                firebase_token.clone(),
-                valid_until.cloned()
-            );
-
-            accounts_locked.insert(account_id.clone(), new_account);
+            return Err(anyhow!("Account {} already exists!", account_id));
         }
+
+        let new_account = Account::new(
+            account_id.clone(),
+            None,
+            valid_until.cloned()
+        );
+
+        accounts_locked.insert(account_id.clone(), new_account);
     }
 
     return Ok(CreateAccountResult::Ok);
@@ -239,13 +271,15 @@ pub async fn update_firebase_token(
     let connection = database.connection().await?;
 
     let statement = connection
-        .prepare("UPDATE accounts SET account_id = $1, firebase_token = $2")
+        .prepare("UPDATE accounts SET firebase_token = $1 WHERE account_id = $2")
         .await?;
 
     connection.execute(
         &statement,
-        &[&account_id.id, &firebase_token.token]
-    ).await.context("update_account() Failed to update firebase_token in the database")?;
+        &[&firebase_token.token, &account_id.id]
+    )
+        .await
+        .context("update_account() Failed to update firebase_token in the database")?;
 
     {
         let mut accounts_locked = accounts_cache.write().await;
@@ -253,14 +287,9 @@ pub async fn update_firebase_token(
         let existing_account = accounts_locked.get_mut(account_id);
         if existing_account.is_some() {
             let mut existing_account = existing_account.unwrap();
-            existing_account.firebase_token = firebase_token.clone();
+            existing_account.firebase_token = Some(firebase_token.clone());
         } else {
-            let updated_account = Account::new_with_token(
-                account_id.clone(),
-                firebase_token.clone()
-            );
-
-            accounts_locked.insert(account_id.clone(), updated_account);
+            return Err(anyhow!("Account {} does not exist!", account_id));
         }
     }
 

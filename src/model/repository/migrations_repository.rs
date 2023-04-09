@@ -95,9 +95,15 @@ pub async fn perform_migrations(database: &Arc<Database>) -> anyhow::Result<()> 
         info!("Applying migration {}... success", migration);
     }
 
-    transaction.commit()
-        .await
-        .context("Failed to commit transaction")?;
+    if applied > 0 {
+        transaction.commit()
+            .await
+            .context("Failed to commit transaction")?;
+    } else {
+        transaction.rollback()
+            .await
+            .context("Failed to rollback transaction")?;
+    }
 
     info!("Applying migrations... success, skipped: {}, applied: {}", skipped, applied);
     return Ok(());

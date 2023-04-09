@@ -39,7 +39,7 @@ pub async fn handle(
     let request: AccountInfoRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into AccountInfoRequest")?;
 
-    let account_id = AccountId::from_str(&request.email)?;
+    let account_id = AccountId::from_email(&request.email)?;
 
     let account = account_repository::get_account(database, &account_id)
         .await

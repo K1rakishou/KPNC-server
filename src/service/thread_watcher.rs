@@ -273,7 +273,10 @@ async fn process_thread(
         );
 
         posts_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
-        return Ok(());
+
+        // Fall through. We still want to send the last batch of messages if there are new replies
+        // to watched posts. We won't be processing this thread on the next iteration, though,
+        // because it will be filtered out during the database query.
     }
 
     debug!("process_thread({}) got thread with {} posts", thread_descriptor, chan_thread.posts.len());
