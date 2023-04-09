@@ -76,12 +76,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .await;
 
             if result.is_err() {
-                let error = result.unwrap();
-                error!(
-                    "Failed to process request from {}, error: {:?}",
-                    sock_addr.ip().to_string(),
-                    error
-                )
+                let error = result.err().unwrap();
+                error!("!!! Unhandled error in a handler. Error: {:?} !!!",error)
             }
         });
     }
