@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::{Arc};
 use http_body_util::Full;
 use hyper::{Request, Response};
@@ -7,10 +8,12 @@ use crate::handlers;
 use crate::model::repository::site_repository::SiteRepository;
 
 pub async fn router(
+    sock_addr: &SocketAddr,
     request: Request<hyper::body::Incoming>,
     database: &Arc<Database>,
     site_repository: &Arc<SiteRepository>,
 ) -> anyhow::Result<Response<Full<Bytes>>> {
+    let remote_address = sock_addr.to_string();
     let (parts, body) = request.into_parts();
 
     let path_and_query = parts.uri.path_and_query();
@@ -24,7 +27,7 @@ pub async fn router(
         path = &path[1..];
     }
 
-    debug!("New request to \'{}\'", path);
+    debug!("New request to \'{}\' from \'{}\'", path, remote_address);
     let query = path_and_query.query().unwrap_or("");
 
     let handler_result = match path {
@@ -50,7 +53,7 @@ pub async fn router(
         let response = Response::new(Full::new(Bytes::from(error_message)));
         return Ok(response);
     } else {
-        debug!("Request to \'{}\' success", path);
+        debug!("Request to \'{}\' from \'{}\' success", path, remote_address);
     }
 
     return handler_result

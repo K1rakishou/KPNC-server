@@ -70,7 +70,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .serve_connection(
                     stream,
                     service_fn(|request| {
-                        return router(request, &database_cloned_for_router, &site_repository_cloned);
+                        return router(
+                            &sock_addr,
+                            request,
+                            &database_cloned_for_router,
+                            &site_repository_cloned
+                        );
                     }),
                 )
                 .await;
