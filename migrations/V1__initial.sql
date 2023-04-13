@@ -75,10 +75,11 @@ CREATE TABLE IF NOT EXISTS post_replies
     created_on                  TIMESTAMP WITH TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     notification_sent_on        TIMESTAMP WITH TIME ZONE DEFAULT NULL,
     deleted_on                  TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    CONSTRAINT fk_owner_account_id FOREIGN KEY (owner_account_id)
+        REFERENCES accounts (id_generated) ON UPDATE CASCADE ON DELETE CASCADE,
     CONSTRAINT fk_owner_post_descriptor_id FOREIGN KEY (owner_post_descriptor_id)
         REFERENCES post_descriptors (id_generated) ON UPDATE CASCADE ON DELETE CASCADE,
     PRIMARY KEY (id_generated)
 );
 
-CREATE UNIQUE INDEX post_replies_owner_account_id_idx ON post_replies (owner_account_id);
-CREATE UNIQUE INDEX post_replies_owner_post_descriptor_id_idx ON post_replies (owner_post_descriptor_id);
+CREATE UNIQUE INDEX post_replies_unique_id_idx ON post_replies (owner_account_id, owner_post_descriptor_id);

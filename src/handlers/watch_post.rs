@@ -56,7 +56,7 @@ pub async fn handle(
 
     let post_descriptor = imageboard.post_url_to_post_descriptor(post_url);
     if post_descriptor.is_none() {
-        let full_error_message = format!("Failed to parse \'{}\' url", post_url);
+        let full_error_message = format!("Failed to parse \'{}\' url as post url", post_url);
 
         let response_json = error_response_string(&full_error_message)?;
         error!("watch_post() {}", full_error_message);

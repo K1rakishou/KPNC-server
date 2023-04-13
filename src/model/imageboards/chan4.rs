@@ -77,7 +77,7 @@ impl Imageboard for Chan4 {
 
         let mut post_no = captures.get(4).map(|post_no| post_no.as_str()).unwrap_or("");
         if post_no.is_empty() {
-            post_no = thread_no_raw;
+            return None;
         }
 
         let post_no = u64::from_str(post_no);
@@ -129,9 +129,7 @@ fn test() {
 
     let td1 = chan4.post_url_to_post_descriptor(
         "https://boards.4chan.org/a/thread/1234567890"
-    ).unwrap();
+    );
 
-    assert_eq!("4chan", td1.site_name().as_str());
-    assert_eq!(1234567890, td1.thread_no());
-    assert_eq!(1234567890, td1.post_no);
+    assert!(td1.is_none());
 }

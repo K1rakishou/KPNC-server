@@ -63,6 +63,20 @@ pub async fn get_post_descriptor_db_id(post_descriptor: &PostDescriptor) -> i64 
     return *pd_to_dbid_cache_locked.get(post_descriptor).unwrap();
 }
 
+pub async fn get_many_post_descriptor_db_ids(post_descriptors: &Vec<&PostDescriptor>) -> Vec<i64> {
+    let pd_to_dbid_cache_locked = pd_to_dbid_cache.read().await;
+    let mut result_vec = Vec::<i64>::with_capacity(post_descriptors.len());
+
+    for post_descriptor in post_descriptors {
+        let post_descriptor_db_id = pd_to_dbid_cache_locked.get(post_descriptor);
+        if post_descriptor_db_id.is_some() {
+            result_vec.push(*post_descriptor_db_id.unwrap());
+        }
+    }
+
+    return result_vec;
+}
+
 pub async fn get_many_post_descriptors_by_db_ids(db_ids: Vec<i64>) -> Vec<PostDescriptor> {
     let dbid_to_pd_cache_locked = dbid_to_pd_cache.read().await;
     let mut result_vec = Vec::<PostDescriptor>::with_capacity(db_ids.len());

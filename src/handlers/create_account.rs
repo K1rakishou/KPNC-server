@@ -4,7 +4,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::{Response};
 use hyper::body::{Bytes, Incoming};
 use serde::{Deserialize};
-use crate::handlers::shared::{ContentType, empty_success_response, error_response_string};
+use crate::handlers::shared::{ContentType, empty_success_response, error_response, error_response_string};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::{CreateAccountResult, FirebaseToken, AccountId};
 use crate::model::repository::account_repository;
@@ -49,10 +49,9 @@ pub async fn handle(
             account_id,
             error_message
         );
-
-        let response_json = error_response_string(&full_error_message)?;
         error!("create_account() {}", full_error_message);
 
+        let response_json = error_response("Account already exists")?;
         let response = Response::builder()
             .json()
             .status(200)

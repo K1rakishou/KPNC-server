@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             if result.is_err() {
                 let error = result.err().unwrap();
-                error!("!!! Unhandled error in a handler. Error: {:?} !!!",error)
+                error!("!!! Unhandled error in a handler. Error: {:?} !!!", error)
             }
         });
     }

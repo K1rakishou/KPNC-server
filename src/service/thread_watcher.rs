@@ -1,5 +1,5 @@
 use std::{env};
-use std::collections::HashSet;
+use std::collections::{HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,14 +9,17 @@ use regex::Regex;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use serde::{Deserialize};
+use tokio_postgres::types::ToSql;
+use crate::helpers::db_helpers;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
-use crate::model::repository::posts_repository;
+use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, posts_repository};
+use crate::model::repository::post_reply_repository::PostReply;
 use crate::model::repository::site_repository::SiteRepository;
 
 lazy_static! {
     static ref post_reply_quote_regex: Regex =
-        Regex::new(r##"<a\s+href=\\"#p(\d+)\\"\s+class=\\"quotelink\\">&gt;&gt;\d+</a>"##).unwrap();
+        Regex::new(r##"<a\s+href="#p(\d+)"\s+class="quotelink">&gt;&gt;\d+</a>"##).unwrap();
 }
 
 pub struct ThreadWatcher {
@@ -151,21 +154,11 @@ async fn process_watched_threads(
             let site_repository_cloned = site_repository.clone();
 
             let join_handle = tokio::task::spawn(async move {
-                let process_thread_result = process_thread(
+                process_thread(
                     &thread_descriptor_cloned,
                     &database_cloned,
                     &site_repository_cloned,
-                ).await;
-
-                if process_thread_result.is_err() {
-                    let error = process_thread_result.err().unwrap();
-
-                    error!(
-                        "process_watched_threads() Error \'{}\' while processing thread {}",
-                        error,
-                        thread_descriptor_cloned
-                    );
-                }
+                ).await.unwrap();
             });
 
             join_handles.push(join_handle);
@@ -293,8 +286,133 @@ async fn process_thread(
         // because it will be filtered out during the database query.
     }
 
-    debug!("process_thread({}) got thread with {} posts", thread_descriptor, chan_thread.posts.len());
-    debug!("process_thread({}) OP: {:?}", thread_descriptor, original_post);
+    debug!(
+        "process_thread({}) got thread with {} posts",
+        thread_descriptor,
+        chan_thread.posts.len()
+    );
+
+    process_posts(thread_descriptor, &chan_thread, database).await?;
 
     return Ok(());
+}
+
+async fn process_posts(
+    thread_descriptor: &ThreadDescriptor,
+    chan_thread: &ChanThread,
+    database: &Arc<Database>
+) -> anyhow::Result<()> {
+    let mut reply_quotes_set = HashSet::<PostDescriptor>::with_capacity(32);
+
+    for post in &chan_thread.posts {
+        let post_comment = post.com.as_ref().map(|com| com.as_str()).unwrap_or("");
+        if post_comment.is_empty() {
+            continue;
+        }
+
+        let captures = post_reply_quote_regex.captures(post_comment);
+        if captures.is_none() {
+            continue;
+        }
+
+        let quote_post_no_str = captures.unwrap().get(1).map(|capture| capture.as_str()).unwrap_or("");
+        if quote_post_no_str.is_empty() {
+            continue;
+        }
+
+        let quote_post_no = u64::from_str(quote_post_no_str).unwrap_or(0);
+        if quote_post_no == 0 {
+            continue;
+        }
+
+        let post_descriptor = PostDescriptor::from_thread_descriptor(
+            thread_descriptor.clone(),
+            quote_post_no
+        );
+
+        reply_quotes_set.insert(post_descriptor);
+    }
+
+    if reply_quotes_set.is_empty() {
+        debug!("process_posts({}) no quotes found", thread_descriptor);
+        return Ok(());
+    }
+
+    debug!("process_posts({}) found {} quotes", thread_descriptor, reply_quotes_set.len());
+    let reply_quotes = reply_quotes_set.iter().collect::<Vec<&PostDescriptor>>();
+
+    let post_descriptor_db_ids = post_descriptor_id_repository::get_many_post_descriptor_db_ids(
+        &reply_quotes
+    ).await;
+
+    if post_descriptor_db_ids.is_empty() {
+        debug!("process_posts({}) no reply db_ids found", thread_descriptor);
+        return Ok(());
+    }
+
+    debug!("process_posts({}) found {} quotes matching post watchers", thread_descriptor, post_descriptor_db_ids.len());
+
+    let query = r#"
+        SELECT
+            posts.id_generated,
+            account.id_generated
+        FROM posts
+        LEFT JOIN watches watch on posts.id_generated = watch.owner_post_id
+        LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
+        WHERE posts.id_generated IN"#;
+
+    let query = db_helpers::format_query_params_string(query, post_descriptor_db_ids.len()).string()?;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query.as_str()).await?;
+    let query_params = post_descriptor_db_ids[..]
+        .iter()
+        .map(|param| param as &(dyn ToSql + Sync))
+        .collect::<Vec<&(dyn ToSql + Sync)>>();
+
+    let rows = connection.query(&statement, &query_params[..]).await?;
+    if rows.is_empty() {
+        debug!("process_posts({}) no accounts found related to post watchers", thread_descriptor);
+        return Ok(());
+    }
+
+    let mut post_replies = Vec::<PostReply>::with_capacity(rows.len());
+
+    for row in rows {
+        let post_id_generated: i64 = row.get(0);
+        let account_id_generated: i64 = row.get(1);
+
+        let post_reply = PostReply {
+            owner_post_descriptor_id: post_id_generated,
+            owner_account_id: account_id_generated
+        };
+
+        post_replies.push(post_reply);
+    }
+
+    debug!(
+        "process_posts({}) storing {} post replies into the database",
+        thread_descriptor,
+        post_replies.len()
+    );
+
+    post_reply_repository::store(&post_replies, database)
+        .await
+        .context(format!("Failed to store post {} replies", post_replies.len()))?;
+
+    debug!("process_posts({}) success!", thread_descriptor);
+    return Ok(());
+}
+
+#[test]
+fn test_regex() {
+    let test_string = "<a href=\"#p251260223\" class=\"quotelink\">&gt;&gt;251260223</a>";
+    let captures = post_reply_quote_regex.captures(test_string).unwrap();
+    assert_eq!(2, captures.len());
+    assert_eq!("251260223", captures.get(1).unwrap().as_str());
+
+    let test_string = "<a href=\"#p425813171\" class=\"quotelink\">&gt;&gt;425813171</a>";
+    let captures = post_reply_quote_regex.captures(test_string).unwrap();
+    assert_eq!(2, captures.len());
+    assert_eq!("425813171", captures.get(1).unwrap().as_str());
 }
