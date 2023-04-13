@@ -1,15 +1,23 @@
 use std::{env};
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use anyhow::{anyhow, Context};
+use lazy_static::lazy_static;
+use regex::Regex;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use serde::{Deserialize};
-use crate::model::data::chan::ThreadDescriptor;
+use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::posts_repository;
 use crate::model::repository::site_repository::SiteRepository;
+
+lazy_static! {
+    static ref post_reply_quote_regex: Regex =
+        Regex::new(r##"<a\s+href=\\"#p(\d+)\\"\s+class=\\"quotelink\\">&gt;&gt;\d+</a>"##).unwrap();
+}
 
 pub struct ThreadWatcher {
     num_cpus: u32,
@@ -81,15 +89,15 @@ impl ThreadWatcher {
                 break;
             }
 
-            let result = process_posts(self.num_cpus, database, site_repository).await;
+            let result = process_watched_threads(self.num_cpus, database, site_repository).await;
             match result {
-                Ok(_) => { info!("process_posts() success") }
-                Err(error) => { error!("process_posts() error: {}", error) }
+                Ok(_) => { info!("thread_watcher_loop() iteration success") }
+                Err(error) => { error!("process_posts() iteration error: \'{}\'", error) }
             }
 
-            info!("process_posts() sleeping for {timeout_seconds} seconds...");
+            info!("thread_watcher_loop() sleeping for {timeout_seconds} seconds...");
             sleep(Duration::from_secs(timeout_seconds)).await;
-            info!("process_posts() sleeping for {timeout_seconds} seconds... done");
+            info!("thread_watcher_loop() sleeping for {timeout_seconds} seconds... done");
         }
 
         info!("ThreadWatcher terminated");
@@ -106,20 +114,19 @@ impl ThreadWatcher {
 
 }
 
-async fn process_posts(
+async fn process_watched_threads(
     num_cpus: u32,
     database: &Arc<Database>,
     site_repository: &Arc<SiteRepository>
 ) -> anyhow::Result<()> {
     let all_watched_threads = posts_repository::get_all_watched_threads(database)
-        .await.context("process_posts() Failed to get all watched threads")?;
+        .await.context("process_watched_threads() Failed to get all watched threads")?;
 
     if all_watched_threads.is_empty() {
-        info!("process_posts() no watched threads to process");
+        info!("process_watched_threads() no watched threads to process");
         return Ok(());
     }
 
-    info!("process_posts() found {} watched threads", all_watched_threads.len());
 
     let mut chunk_size: usize = (num_cpus * 4) as usize;
     if chunk_size < 8 {
@@ -129,7 +136,11 @@ async fn process_posts(
         chunk_size = 128;
     }
 
-    info!("process_posts() using chunk size {}", chunk_size);
+    info!(
+        "process_watched_threads() found {} watched threads, processing with chunk size {}",
+        all_watched_threads.len(),
+        chunk_size
+    );
 
     for thread_descriptors in all_watched_threads.chunks(chunk_size) {
         let mut join_handles: Vec<JoinHandle<()>> = Vec::with_capacity(chunk_size);
@@ -150,7 +161,7 @@ async fn process_posts(
                     let error = process_thread_result.err().unwrap();
 
                     error!(
-                        "process_posts() Error \'{}\' while processing thread {}",
+                        "process_watched_threads() Error \'{}\' while processing thread {}",
                         error,
                         thread_descriptor_cloned
                     );
@@ -162,6 +173,8 @@ async fn process_posts(
 
         futures::future::join_all(join_handles).await;
     }
+
+    info!("process_watched_threads() processing done");
 
     return Ok(());
 }
@@ -220,18 +233,19 @@ async fn process_thread(
 
     let chan_thread = serde_json::from_str::<ChanThread>(response_text.as_str());
     if chan_thread.is_err() {
+        let to_print_chars_count = 512;
         let chars = response_text.chars();
         let chars_count = chars.size_hint().0;
-        let text: Vec<u16> = chars.take(128).map(|ch| ch as u16).collect();
+        let text: Vec<u16> = chars.take(to_print_chars_count).map(|ch| ch as u16).collect();
 
         let body_text = if text.is_empty() {
             String::from("<body is empty>")
         } else {
-            if chars_count < 128 {
+            if chars_count < to_print_chars_count {
                 String::from_utf16_lossy(text.as_slice())
             } else {
-                let remaining_chars_count = chars_count - 128;
-                format!("{} +{} more", String::from_utf16_lossy(text.as_slice()), remaining_chars_count)
+                let remaining_chars_count = chars_count - to_print_chars_count;
+                format!("{} (+{} more)", String::from_utf16_lossy(text.as_slice()), remaining_chars_count)
             }
         };
 

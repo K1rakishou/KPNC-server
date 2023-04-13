@@ -4,10 +4,11 @@ use http_body_util::{BodyExt, Full};
 use hyper::{Response};
 use hyper::body::{Bytes, Incoming};
 use serde::{Deserialize};
-use crate::handlers::shared::{ContentType, empty_success_response, error_response_string, validate_post_url};
+use crate::handlers::shared::{ContentType, empty_success_response, error_response, error_response_string, validate_post_url};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::{AccountId};
 use crate::model::repository::posts_repository;
+use crate::model::repository::posts_repository::StartWatchingPostResult;
 use crate::model::repository::site_repository::SiteRepository;
 
 #[derive(Deserialize)]
@@ -70,11 +71,29 @@ pub async fn handle(
 
     let post_descriptor = post_descriptor.unwrap();
 
-    let post_watch_created = posts_repository::start_watching_post(
+    let post_watch_created_result = posts_repository::start_watching_post(
         database,
         &account_id,
         &post_descriptor
     ).await.context(format!("Failed to start watching post {}", post_descriptor))?;
+
+    if post_watch_created_result == StartWatchingPostResult::AccountDoesNotExist {
+        let response_json = error_response("Account does not exist or already expired")?;
+
+        let response = Response::builder()
+            .json()
+            .status(200)
+            .body(Full::new(Bytes::from(response_json)))?;
+
+        info!(
+            "Failed to start watching post {} for account {}, result: {:?}",
+            post_descriptor,
+            account_id,
+            post_watch_created_result
+        );
+
+        return Ok(response);
+    }
 
     let response_json = empty_success_response()?;
 
@@ -83,19 +102,11 @@ pub async fn handle(
         .status(200)
         .body(Full::new(Bytes::from(response_json)))?;
 
-    if post_watch_created {
-        info!(
-            "Successfully started watching post {} for account {}",
-            post_descriptor,
-            account_id
-        );
-    } else {
-        info!(
+    info!(
             "Post watch for post {} and account id {} was not created because it already exists",
             post_descriptor,
             account_id
         );
-    }
 
     return Ok(response);
 }

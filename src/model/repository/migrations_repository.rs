@@ -64,7 +64,10 @@ pub async fn perform_migrations(database: &Arc<Database>) -> anyhow::Result<()> 
                 .await?;
 
             if !migrations_match {
-                panic!("Migrations do not match!");
+                panic!(
+                    "Applied migration does not match migration on disk! Version: {}",
+                    migration.version()
+                );
             }
 
             skipped += 1;

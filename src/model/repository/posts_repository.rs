@@ -1,47 +1,67 @@
 use std::sync::Arc;
 use anyhow::Context;
+use tokio_postgres::Row;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::AccountId;
+use crate::model::repository::post_descriptor_id_repository;
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum StartWatchingPostResult {
+    Ok,
+    AccountDoesNotExist,
+    PostWatchAlreadyExists
+}
 
 pub async fn start_watching_post(
     database: &Arc<Database>,
     account_id: &AccountId,
     post_descriptor: &PostDescriptor
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<StartWatchingPostResult> {
     let mut connection = database.connection().await?;
     let transaction = connection.transaction().await?;
 
-    // TODO: check account is valid before inserting new post watch
+    // TODO: should check separately whether an account exist and whether it's valid
+    let query = r#"
+        SELECT id_generated
+        FROM accounts
+        WHERE
+            account_id = $1
+        AND
+            valid_until > now()
+"#;
 
-    let owner_account_id: i64 = transaction.query_one(
-        "SELECT id_generated FROM accounts WHERE account_id = $1",
+    let owner_account_id: Option<Row> = transaction.query_opt(
+        query,
         &[&account_id.id]
-    ).await?.get(0);
+    ).await?;
+
+    if owner_account_id.is_none() {
+        return Ok(StartWatchingPostResult::AccountDoesNotExist);
+    }
+
+    let owner_account_id: i64 = owner_account_id.unwrap().get(0);
+
+    let owner_post_descriptor_id = post_descriptor_id_repository::insert_descriptor_db_id(
+        post_descriptor,
+        &transaction
+    ).await?;
 
     let query = r#"
         INSERT INTO posts(
-            site_name,
-            board_code,
-            thread_no,
-            post_no,
-            post_sub_no,
+            owner_post_descriptor_id,
             is_dead
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (site_name, board_code, thread_no, post_no, post_sub_no)
-        DO UPDATE SET site_name = $1
-        RETURNING id_generated
+        VALUES ($1, $2)
+        ON CONFLICT (owner_post_descriptor_id)
+        DO UPDATE SET owner_post_descriptor_id = $1
+        RETURNING posts.id_generated
 "#;
 
     let owner_post_id: i64 = transaction.query_one(
         query,
         &[
-            post_descriptor.site_name(),
-            post_descriptor.board_code(),
-            &(post_descriptor.thread_no() as i64),
-            &(post_descriptor.post_no as i64),
-            &(post_descriptor.post_sub_no as i64),
+            &owner_post_descriptor_id,
             &false
         ]
     ).await?.get(0);
@@ -52,7 +72,7 @@ pub async fn start_watching_post(
             owner_account_id
         )
         VALUES ($1, $2)
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (owner_post_id, owner_account_id) DO NOTHING
         RETURNING id_generated
 "#;
 
@@ -68,13 +88,13 @@ pub async fn start_watching_post(
         transaction.rollback().await?;
 
         debug!("start_watching_post() Post watch {} already exists in the database", post_descriptor);
-        return Ok(false);
+        return Ok(StartWatchingPostResult::PostWatchAlreadyExists);
     }
 
     transaction.commit().await?;
     debug!("start_watching_post() Created new post watch for post {}", post_descriptor);
 
-    return Ok(true);
+    return Ok(StartWatchingPostResult::Ok);
 }
 
 pub async fn get_all_watched_threads(
@@ -84,16 +104,13 @@ pub async fn get_all_watched_threads(
 
     let query = r#"
         SELECT
-            posts.site_name,
-            posts.board_code,
-            posts.thread_no
+            posts.owner_post_descriptor_id
         FROM
             posts
         WHERE
             posts.is_dead = FALSE
         AND
             posts.deleted_on is NULL
-        GROUP BY posts.site_name, posts.board_code, posts.thread_no
 "#;
 
     let rows = connection.query(query, &[]).await?;
@@ -101,10 +118,22 @@ pub async fn get_all_watched_threads(
         return Ok(vec![]);
     }
 
-    let mut thread_descriptors = Vec::with_capacity(rows.len());
+    let owner_post_descriptor_ids = rows.iter()
+        .map(|row| row.get::<usize, i64>(0))
+        .collect::<Vec<i64>>();
 
-    for row in rows {
-        thread_descriptors.push(ThreadDescriptor::from_row(&row));
+    let post_descriptors = post_descriptor_id_repository::get_many_post_descriptors_by_db_ids(
+        owner_post_descriptor_ids
+    ).await;
+
+    if post_descriptors.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut thread_descriptors = Vec::with_capacity(post_descriptors.len());
+
+    for post_descriptor in post_descriptors {
+        thread_descriptors.push(post_descriptor.thread_descriptor);
     }
 
     return Ok(thread_descriptors);
@@ -116,24 +145,19 @@ pub async fn mark_all_thread_posts_dead(
 ) -> anyhow::Result<()> {
     let connection = database.connection().await?;
 
+    let thread_post_db_ids = post_descriptor_id_repository::get_thread_post_db_ids(
+        thread_descriptor
+    ).await;
+
     let query = r#"
         UPDATE posts
         SET is_dead = TRUE
-        WHERE
-            posts.site_name = $1
-        AND
-            posts.board_code = $2
-        AND
-            posts.thread_no = $3
+        WHERE posts.id_generated IN $1
 "#;
 
     connection.execute(
         query,
-        &[
-            thread_descriptor.site_name(),
-            thread_descriptor.board_code(),
-            &(thread_descriptor.thread_no as i64)
-        ]
+        &[&thread_post_db_ids]
     )
         .await
         .context(format!("Failed to update is_dead flag for thread {}", thread_descriptor))?;

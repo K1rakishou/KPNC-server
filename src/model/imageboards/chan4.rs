@@ -21,8 +21,7 @@ impl Imageboard for Chan4 {
     }
 
     fn matches(&self, site_descriptor: &SiteDescriptor) -> bool {
-        let site_name = site_descriptor.site_name.as_str();
-        return site_name == "4chan" || site_name == "4channel";
+        return site_descriptor.site_name_str() == "4chan";
     }
 
     fn url_matches(&self, url: &str) -> bool {

@@ -2,12 +2,14 @@ use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use anyhow::Context;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use log::LevelFilter;
 use tokio::net::TcpListener;
 use crate::model::database::db::Database;
 use crate::model::repository::migrations_repository::perform_migrations;
+use crate::model::repository::post_descriptor_id_repository;
 use crate::model::repository::site_repository::SiteRepository;
 use crate::router::router;
 use crate::service::thread_watcher::ThreadWatcher;
@@ -48,6 +50,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let site_repository = Arc::new(SiteRepository::new());
     let database_cloned_for_watcher = database.clone();
     let site_repository_for_watcher = site_repository.clone();
+
+    post_descriptor_id_repository::init(&database)
+        .await
+        .context("Failed to init post_descriptor_id_repository")?;
 
     tokio::task::spawn(async move {
         let mut thread_watcher = ThreadWatcher::new(num_cpus);
