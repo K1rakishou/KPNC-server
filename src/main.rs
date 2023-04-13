@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let site_repository_cloned = site_repository.clone();
 
         tokio::task::spawn(async move {
-            let result = http1::Builder::new()
+            http1::Builder::new()
                 .serve_connection(
                     stream,
                     service_fn(|request| {
@@ -84,12 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         );
                     }),
                 )
-                .await;
-
-            if result.is_err() {
-                let error = result.err().unwrap();
-                error!("!!! Unhandled error in a handler. Error: {:?} !!!", error)
-            }
+                .await
+                .unwrap();
         });
     }
 }

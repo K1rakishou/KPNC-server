@@ -27,7 +27,9 @@ pub async fn router(
         path = &path[1..];
     }
 
-    debug!("New request to \'{}\' from \'{}\'", path, remote_address);
+    let start = chrono::offset::Utc::now();
+
+    info!("New request to \'{}\' from \'{}\'", path, remote_address);
     let query = path_and_query.query().unwrap_or("");
 
     let handler_result = match path {
@@ -37,6 +39,8 @@ pub async fn router(
         "watch_post" => handlers::watch_post::handle(query, body, database, site_repository).await,
         _ => handlers::index::handle(query, body).await
     };
+
+    let delta = chrono::offset::Utc::now() - start;
 
     if handler_result.is_err() {
         let handler_error = handler_result
@@ -53,7 +57,12 @@ pub async fn router(
         let response = Response::new(Full::new(Bytes::from(error_message)));
         return Ok(response);
     } else {
-        debug!("Request to \'{}\' from \'{}\' success", path, remote_address);
+        info!(
+            "Request to \'{}\' from \'{}\' success, took {} ms",
+            path,
+            remote_address,
+            delta.num_milliseconds()
+        );
     }
 
     return handler_result
