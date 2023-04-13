@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use tokio_postgres::types::ToSql;
 use crate::model::database::db::Database;
 
 pub struct PostReply {

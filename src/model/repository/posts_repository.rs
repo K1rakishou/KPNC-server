@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use anyhow::Context;
 use tokio_postgres::Row;
+use crate::helpers::db_helpers;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::AccountId;
@@ -152,12 +153,20 @@ pub async fn mark_all_thread_posts_dead(
     let query = r#"
         UPDATE posts
         SET is_dead = TRUE
-        WHERE posts.id_generated IN $1
+        WHERE posts.id_generated IN
 "#;
 
-    connection.execute(
+    let query_with_params = db_helpers::format_query_params_string(
         query,
-        &[&thread_post_db_ids]
+        "",
+        thread_post_db_ids.len()
+    ).string()?;
+
+    let query_params = db_helpers::to_db_params::<i64>(&thread_post_db_ids);
+
+    connection.execute(
+        query_with_params.as_str(),
+        &query_params[..]
     )
         .await
         .context(format!("Failed to update is_dead flag for thread {}", thread_descriptor))?;

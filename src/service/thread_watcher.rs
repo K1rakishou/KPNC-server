@@ -302,6 +302,7 @@ async fn process_posts(
     chan_thread: &ChanThread,
     database: &Arc<Database>
 ) -> anyhow::Result<()> {
+    debug!("process_posts({}) start", thread_descriptor);
     let mut reply_quotes_set = HashSet::<PostDescriptor>::with_capacity(32);
 
     for post in &chan_thread.posts {
@@ -334,7 +335,7 @@ async fn process_posts(
     }
 
     if reply_quotes_set.is_empty() {
-        debug!("process_posts({}) no quotes found", thread_descriptor);
+        debug!("process_posts({}) end. No quotes found", thread_descriptor);
         return Ok(());
     }
 
@@ -346,33 +347,41 @@ async fn process_posts(
     ).await;
 
     if post_descriptor_db_ids.is_empty() {
-        debug!("process_posts({}) no reply db_ids found", thread_descriptor);
+        debug!("process_posts({}) end. No reply db_ids found", thread_descriptor);
         return Ok(());
     }
 
     debug!("process_posts({}) found {} quotes matching post watchers", thread_descriptor, post_descriptor_db_ids.len());
 
-    let query = r#"
+    let query_start = r#"
         SELECT
             posts.id_generated,
-            account.id_generated
+            account.id_generated,
+            post_reply.created_on
         FROM posts
-        LEFT JOIN watches watch on posts.id_generated = watch.owner_post_id
-        LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
-        WHERE posts.id_generated IN"#;
+             LEFT JOIN watches watch on posts.id_generated = watch.owner_post_id
+             LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
+             LEFT JOIN post_replies post_reply on posts.id_generated = post_reply.owner_post_descriptor_id
+        WHERE
+            posts.id_generated IN "#;
 
-    let query = db_helpers::format_query_params_string(query, post_descriptor_db_ids.len()).string()?;
+    let query_end = r#"
+        AND
+            post_reply.created_on IS NULL"#;
+
+    let query = db_helpers::format_query_params_string(
+        query_start,
+        query_end,
+        post_descriptor_db_ids.len()
+    ).string()?;
 
     let connection = database.connection().await?;
     let statement = connection.prepare(query.as_str()).await?;
-    let query_params = post_descriptor_db_ids[..]
-        .iter()
-        .map(|param| param as &(dyn ToSql + Sync))
-        .collect::<Vec<&(dyn ToSql + Sync)>>();
+    let query_params = db_helpers::to_db_params::<i64>(&post_descriptor_db_ids);
 
     let rows = connection.query(&statement, &query_params[..]).await?;
     if rows.is_empty() {
-        debug!("process_posts({}) no accounts found related to post watchers", thread_descriptor);
+        debug!("process_posts({}) end. No accounts found related to post watchers", thread_descriptor);
         return Ok(());
     }
 
@@ -400,7 +409,7 @@ async fn process_posts(
         .await
         .context(format!("Failed to store post {} replies", post_replies.len()))?;
 
-    debug!("process_posts({}) success!", thread_descriptor);
+    debug!("process_posts({}) end. Success!", thread_descriptor);
     return Ok(());
 }
 
