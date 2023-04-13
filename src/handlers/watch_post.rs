@@ -7,8 +7,8 @@ use serde::{Deserialize};
 use crate::handlers::shared::{ContentType, empty_success_response, error_response, error_response_string, validate_post_url};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::{AccountId};
-use crate::model::repository::posts_repository;
-use crate::model::repository::posts_repository::StartWatchingPostResult;
+use crate::model::repository::post_repository;
+use crate::model::repository::post_repository::StartWatchingPostResult;
 use crate::model::repository::site_repository::SiteRepository;
 
 #[derive(Deserialize)]
@@ -71,7 +71,7 @@ pub async fn handle(
 
     let post_descriptor = post_descriptor.unwrap();
 
-    let post_watch_created_result = posts_repository::start_watching_post(
+    let post_watch_created_result = post_repository::start_watching_post(
         database,
         &account_id,
         &post_descriptor
@@ -103,10 +103,10 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     info!(
-            "Post watch for post {} and account id {} was not created because it already exists",
-            post_descriptor,
-            account_id
-        );
+        "Post watch for post {} and account id {} was not created because it already exists",
+        post_descriptor,
+        account_id
+    );
 
     return Ok(response);
 }

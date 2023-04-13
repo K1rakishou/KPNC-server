@@ -9,12 +9,9 @@ use regex::Regex;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use serde::{Deserialize};
-use tokio_postgres::types::ToSql;
-use crate::helpers::db_helpers;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
-use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, posts_repository};
-use crate::model::repository::post_reply_repository::PostReply;
+use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, post_repository};
 use crate::model::repository::site_repository::SiteRepository;
 
 lazy_static! {
@@ -122,7 +119,7 @@ async fn process_watched_threads(
     database: &Arc<Database>,
     site_repository: &Arc<SiteRepository>
 ) -> anyhow::Result<()> {
-    let all_watched_threads = posts_repository::get_all_watched_threads(database)
+    let all_watched_threads = post_repository::get_all_watched_threads(database)
         .await.context("process_watched_threads() Failed to get all watched threads")?;
 
     if all_watched_threads.is_empty() {
@@ -168,6 +165,7 @@ async fn process_watched_threads(
     }
 
     info!("process_watched_threads() processing done");
+    // TODO: send GCM messages
 
     return Ok(());
 }
@@ -184,7 +182,7 @@ async fn process_thread(
             thread_descriptor
         );
 
-        posts_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+        post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
         return Ok(());
     }
 
@@ -209,7 +207,7 @@ async fn process_thread(
                 thread_descriptor
             );
 
-            posts_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+            post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
         }
 
         return Ok(());
@@ -279,7 +277,7 @@ async fn process_thread(
             original_post.closed.unwrap_or(0) == 1,
         );
 
-        posts_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+        post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
 
         // Fall through. We still want to send the last batch of messages if there are new replies
         // to watched posts. We won't be processing this thread on the next iteration, though,
@@ -316,7 +314,11 @@ async fn process_posts(
             continue;
         }
 
-        let quote_post_no_str = captures.unwrap().get(1).map(|capture| capture.as_str()).unwrap_or("");
+        let quote_post_no_str = captures.unwrap()
+            .get(1)
+            .map(|capture| capture.as_str())
+            .unwrap_or("");
+
         if quote_post_no_str.is_empty() {
             continue;
         }
@@ -351,53 +353,17 @@ async fn process_posts(
         return Ok(());
     }
 
-    debug!("process_posts({}) found {} quotes matching post watchers", thread_descriptor, post_descriptor_db_ids.len());
-
-    let query_start = r#"
-        SELECT
-            posts.id_generated,
-            account.id_generated,
-            post_reply.created_on
-        FROM posts
-             LEFT JOIN watches watch on posts.id_generated = watch.owner_post_id
-             LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
-             LEFT JOIN post_replies post_reply on posts.id_generated = post_reply.owner_post_descriptor_id
-        WHERE
-            posts.id_generated IN "#;
-
-    let query_end = r#"
-        AND
-            post_reply.created_on IS NULL"#;
-
-    let query = db_helpers::format_query_params_string(
-        query_start,
-        query_end,
+    debug!(
+        "process_posts({}) found {} quotes matching post watchers",
+        thread_descriptor,
         post_descriptor_db_ids.len()
-    ).string()?;
+    );
 
-    let connection = database.connection().await?;
-    let statement = connection.prepare(query.as_str()).await?;
-    let query_params = db_helpers::to_db_params::<i64>(&post_descriptor_db_ids);
-
-    let rows = connection.query(&statement, &query_params[..]).await?;
-    if rows.is_empty() {
-        debug!("process_posts({}) end. No accounts found related to post watchers", thread_descriptor);
-        return Ok(());
-    }
-
-    let mut post_replies = Vec::<PostReply>::with_capacity(rows.len());
-
-    for row in rows {
-        let post_id_generated: i64 = row.get(0);
-        let account_id_generated: i64 = row.get(1);
-
-        let post_reply = PostReply {
-            owner_post_descriptor_id: post_id_generated,
-            owner_account_id: account_id_generated
-        };
-
-        post_replies.push(post_reply);
-    }
+    let post_replies = post_repository::find_new_replies(
+        thread_descriptor,
+        database,
+        &post_descriptor_db_ids
+    ).await?;
 
     debug!(
         "process_posts({}) storing {} post replies into the database",

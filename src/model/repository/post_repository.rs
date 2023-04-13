@@ -6,6 +6,7 @@ use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::AccountId;
 use crate::model::repository::post_descriptor_id_repository;
+use crate::model::repository::post_reply_repository::PostReply;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum StartWatchingPostResult {
@@ -172,4 +173,58 @@ pub async fn mark_all_thread_posts_dead(
         .context(format!("Failed to update is_dead flag for thread {}", thread_descriptor))?;
 
     return Ok(());
+}
+
+pub async fn find_new_replies(
+    thread_descriptor: &ThreadDescriptor,
+    database: &Arc<Database>,
+    post_descriptor_db_ids: &Vec<i64>
+) -> anyhow::Result<Vec<PostReply>> {
+    let query_start = r#"
+        SELECT
+            posts.id_generated,
+            account.id_generated,
+            post_reply.created_on
+        FROM posts
+             LEFT JOIN watches watch on posts.id_generated = watch.owner_post_id
+             LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
+             LEFT JOIN post_replies post_reply on posts.id_generated = post_reply.owner_post_descriptor_id
+        WHERE
+            posts.id_generated IN "#;
+
+    let query_end = r#"
+        AND
+            post_reply.created_on IS NULL"#;
+
+    let query = db_helpers::format_query_params_string(
+        query_start,
+        query_end,
+        post_descriptor_db_ids.len()
+    ).string()?;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query.as_str()).await?;
+    let query_params = db_helpers::to_db_params::<i64>(&post_descriptor_db_ids);
+
+    let rows = connection.query(&statement, &query_params[..]).await?;
+    if rows.is_empty() {
+        debug!("process_posts({}) end. No accounts found related to post watchers", thread_descriptor);
+        return Ok(vec![]);
+    }
+
+    let mut post_replies = Vec::<PostReply>::with_capacity(rows.len());
+
+    for row in rows {
+        let post_id_generated: i64 = row.get(0);
+        let account_id_generated: i64 = row.get(1);
+
+        let post_reply = PostReply {
+            owner_post_descriptor_id: post_id_generated,
+            owner_account_id: account_id_generated
+        };
+
+        post_replies.push(post_reply);
+    }
+
+    return Ok(post_replies);
 }
