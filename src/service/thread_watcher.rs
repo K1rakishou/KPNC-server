@@ -1,5 +1,5 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,9 +11,10 @@ use serde::Deserialize;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
+use crate::helpers::post_helpers;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
-use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, post_repository};
+use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, post_repository, thread_repository};
 use crate::model::repository::site_repository::SiteRepository;
 use crate::service::fcm_sender::FcmSender;
 
@@ -54,6 +55,7 @@ impl ChanThread {
 #[derive(Debug, Deserialize)]
 struct ChanPost {
     no: u64,
+    subno: Option<u64>,
     resto: u64,
     closed: Option<i32>,
     archived: Option<i32>,
@@ -341,11 +343,44 @@ async fn process_posts(
         return Ok(());
     }
 
-    // TODO: read last processed post here and do not do anything to posts that are less than the
-    //  last processed post
-    let mut found_post_replies_set = HashSet::<FoundPostReply>::with_capacity(32);
+    let last_processed_post = thread_repository::get_last_processed_post(
+        thread_descriptor,
+        database
+    ).await?;
+
+    if last_processed_post.is_some() {
+        debug!(
+            "process_posts({}) last_processed_post: {}",
+            thread_descriptor,
+            last_processed_post.clone().unwrap()
+        );
+    } else {
+        debug!(
+            "process_posts({}) last_processed_post: None",
+            thread_descriptor,
+        );
+    }
+
+    let mut found_post_replies_set = HashSet::<FoundPostReply>::with_capacity(chan_thread.posts.len());
+    let mut new_posts_count = 0;
 
     for post in &chan_thread.posts {
+        let origin = PostDescriptor::from_thread_descriptor(
+            thread_descriptor.clone(),
+            post.no,
+            post.subno.unwrap_or(0)
+        );
+
+        if last_processed_post.is_some() {
+            let last_processed_post = last_processed_post.clone().unwrap();
+            let comparison_result = post_helpers::compare_post_descriptors(&origin, &last_processed_post);
+            if comparison_result == Ordering::Less || comparison_result == Ordering::Equal {
+                continue;
+            }
+        }
+
+        new_posts_count += 1;
+
         let post_comment = post.com.as_ref().map(|com| com.as_str()).unwrap_or("");
         if post_comment.is_empty() {
             continue;
@@ -367,18 +402,14 @@ async fn process_posts(
                 continue;
             }
 
-            let origin = PostDescriptor::from_thread_descriptor(
-                thread_descriptor.clone(),
-                post.no
-            );
-
             let replies_to = PostDescriptor::from_thread_descriptor(
                 thread_descriptor.clone(),
-                quote_post_no
+                quote_post_no,
+                0
             );
 
             let post_reply = FoundPostReply {
-                origin,
+                origin: origin.clone(),
                 replies_to
             };
 
@@ -386,8 +417,31 @@ async fn process_posts(
         }
     }
 
-    // TODO: store last processed post descriptor in the database so that we don't need to recheck
-    //  the same posts again and again while a thread is alive.
+    debug!("process_posts({}) new_posts_count: {}", thread_descriptor, new_posts_count);
+
+    let last_post = chan_thread.posts.last();
+    if last_post.is_none() {
+        return Ok(());
+    }
+
+    let last_post = last_post.unwrap();
+
+    let last_post_descriptor = PostDescriptor::from_thread_descriptor(
+        thread_descriptor.clone(),
+        last_post.no,
+        last_post.subno.unwrap_or(0)
+    );
+
+    debug!(
+        "process_posts({}) storing {} as last_processed_post",
+        thread_descriptor,
+        last_post_descriptor
+    );
+
+    thread_repository::store_last_processed_post(
+        &last_post_descriptor,
+        database
+    ).await?;
 
     if found_post_replies_set.is_empty() {
         debug!("process_posts({}) end. No post replies found", thread_descriptor);

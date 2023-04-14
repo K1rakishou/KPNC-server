@@ -195,6 +195,24 @@ impl PostDescriptor {
         return self.thread_descriptor.thread_no
     }
 
+    pub fn from_str(
+        site_name: &str,
+        board_code: &str,
+        thread_no: u64,
+        post_no: u64,
+        post_sub_no: u64
+    ) -> PostDescriptor {
+        let site_descriptor = SiteDescriptor::from_str(&site_name);
+        let catalog_descriptor = CatalogDescriptor { site_descriptor, board_code: board_code.to_string() };
+        let thread_descriptor = ThreadDescriptor { catalog_descriptor, thread_no };
+
+        return PostDescriptor {
+            thread_descriptor,
+            post_no,
+            post_sub_no
+        }
+    }
+
     pub fn new(
         site_name: String,
         board_code: String,
@@ -215,12 +233,13 @@ impl PostDescriptor {
 
     pub fn from_thread_descriptor(
         thread_descriptor: ThreadDescriptor,
-        post_no: u64
+        post_no: u64,
+        post_sub_no: u64
     ) -> PostDescriptor {
         return PostDescriptor {
             thread_descriptor,
             post_no,
-            post_sub_no: 0u64
+            post_sub_no
         }
     }
 }
