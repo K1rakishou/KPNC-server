@@ -5,8 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
+use chrono::{DateTime, FixedOffset};
 use lazy_static::lazy_static;
 use regex::Regex;
+use reqwest::Client;
 use serde::Deserialize;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -21,6 +23,8 @@ use crate::service::fcm_sender::FcmSender;
 lazy_static! {
     static ref POST_REPLY_QUOTE_REGEX: Regex =
         Regex::new(r##"<a\s+href="#p(\d+)"\s+class="quotelink">&gt;&gt;\d+</a>"##).unwrap();
+
+    static ref HTTP_CLIENT: Client = reqwest::Client::new();
 }
 
 pub struct ThreadWatcher {
@@ -123,8 +127,8 @@ impl ThreadWatcher {
             };
 
             let timeout_seconds = match processed_threads {
-                0..=256 => default_timeout_seconds,
-                256..=1024 => default_timeout_seconds * 2,
+                0..=255 => default_timeout_seconds,
+                256..=1023 => default_timeout_seconds * 2,
                 1024..=4096 => default_timeout_seconds * 3,
                 _ => default_timeout_seconds * 5,
             };
@@ -223,7 +227,45 @@ async fn process_thread(
     }
 
     let thread_json_endpoint = thread_json_endpoint.unwrap();
-    let response = reqwest::get(thread_json_endpoint.clone())
+
+    let head_request = HTTP_CLIENT.head(thread_json_endpoint.clone()).build()?;
+    let head_response = HTTP_CLIENT.execute(head_request).await?;
+
+    let last_modified_str = head_response.headers()
+        .get("Last-Modified")
+        .map(|header_value| header_value.to_str().unwrap_or(""))
+        .unwrap_or("");
+
+    let last_modified = DateTime::parse_from_rfc2822(last_modified_str);
+    let last_modified: Option<DateTime<FixedOffset>> = if last_modified.is_err() {
+        error!(
+            "process_thread({}) Failed to parse \'{}\' as DateTime (last_modified)",
+            thread_descriptor,
+            last_modified_str
+        );
+
+        None
+    } else {
+        Some(last_modified.unwrap())
+    };
+
+    let thread_updated_since_last_check = was_content_modified_since_last_check(
+        thread_descriptor,
+        &last_modified,
+        database
+    ).await?;
+
+    if !thread_updated_since_last_check {
+        debug!(
+            "process_thread({}) content wasn't modified since last check, exiting",
+            thread_descriptor
+        );
+
+        return Ok(())
+    }
+
+    let request = HTTP_CLIENT.get(thread_json_endpoint.clone()).build()?;
+    let response = HTTP_CLIENT.execute(request)
         .await
         .with_context(|| {
             return format!(
@@ -328,7 +370,47 @@ async fn process_thread(
 
     process_posts(thread_descriptor, &chan_thread, database).await?;
 
+    if last_modified.is_some() {
+        let last_modified = last_modified.unwrap();
+
+        debug!(
+            "process_thread({}) updating last_modified: {}",
+            thread_descriptor,
+            last_modified
+        );
+
+        thread_repository::store_last_modified(
+            &last_modified,
+            thread_descriptor,
+            database
+        ).await?;
+    }
+
     return Ok(());
+}
+
+async fn was_content_modified_since_last_check(
+    thread_descriptor: &ThreadDescriptor,
+    last_modified_remote: &Option<DateTime<FixedOffset>>,
+    database: &Arc<Database>
+) -> anyhow::Result<bool> {
+    if last_modified_remote.is_none() {
+        return Ok(true)
+    }
+
+    let last_modified_local = thread_repository::get_last_modified(
+        thread_descriptor,
+        database
+    ).await?;
+
+    if last_modified_local.is_none() {
+        return Ok(true);
+    }
+
+    let last_modified_remote = last_modified_remote.unwrap();
+    let last_modified_local = last_modified_local.unwrap();
+
+    return Ok(last_modified_remote > last_modified_local);
 }
 
 async fn process_posts(
