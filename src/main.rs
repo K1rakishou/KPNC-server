@@ -29,14 +29,17 @@ mod helpers;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let is_dev_build = i32::from_str(&env::var("DEVELOPMENT_BUILD")?)? == 1;
+    let is_dev_build = i32::from_str(
+        &env::var("DEVELOPMENT_BUILD")
+            .context("Failed to read DEVELOPMENT_BUILD from Environment")?
+    )? == 1;
     let timeout_seconds = env::var("THREAD_WATCHER_TIMEOUT_SECONDS")
         .map(|value| u64::from_str(value.as_str()).unwrap())
-        .unwrap_or(60 as u64);
+        .context("Failed to read THREAD_WATCHER_TIMEOUT_SECONDS")?;
     let connection_string = env::var("DATABASE_CONNECTION_STRING")
-        .context("Failed to read database connection string from Environment")?;
+        .context("Failed to read DATABASE_CONNECTION_STRING")?;
     let firebase_api_key = env::var("FIREBASE_API_KEY")
-        .context("Failed to read firebase api key from Environment")?;
+        .context("Failed to read FIREBASE_API_KEY from Environment")?;
 
     init_logger(is_dev_build);
 
