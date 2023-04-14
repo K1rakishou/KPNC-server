@@ -195,7 +195,9 @@ pub async fn find_new_replies(
 
     let query_end = r#"
         AND
-            post_reply.created_on IS NULL"#;
+            post_reply.notification_sent_on IS NULL
+        AND
+            post_reply.deleted_on IS NULL"#;
 
     let query = db_helpers::format_query_params_string(
         query_start,
