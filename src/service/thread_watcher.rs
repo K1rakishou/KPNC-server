@@ -24,6 +24,7 @@ lazy_static! {
 
 pub struct ThreadWatcher {
     num_cpus: u32,
+    timeout_seconds: u64,
     working: bool
 }
 
@@ -73,8 +74,8 @@ impl ChanPost {
 }
 
 impl ThreadWatcher {
-    pub fn new(num_cpus: u32) -> ThreadWatcher {
-        return ThreadWatcher { num_cpus, working: false };
+    pub fn new(num_cpus: u32, timeout_seconds: u64) -> ThreadWatcher {
+        return ThreadWatcher { num_cpus, timeout_seconds, working: false };
     }
 
     pub async fn start(
@@ -89,10 +90,7 @@ impl ThreadWatcher {
 
         self.working = true;
         info!("ThreadWatcher started");
-
-        let timeout_seconds = env::var("THREAD_WATCHER_TIMEOUT_SECONDS")
-            .map(|value| u64::from_str(value.as_str()).unwrap())
-            .unwrap_or(60 as u64);
+        let default_timeout_seconds = self.timeout_seconds;
 
         loop {
             if !self.working {
@@ -106,10 +104,28 @@ impl ThreadWatcher {
                 fcm_sender
             ).await;
 
-            match result {
-                Ok(_) => { info!("thread_watcher_loop() iteration success") }
-                Err(error) => { error!("process_posts() iteration error: \'{}\'", error) }
-            }
+            let processed_threads = match result {
+                Ok(processed_threads) => {
+                    info!(
+                        "thread_watcher_loop() iteration success, processed_threads: {}",
+                        processed_threads
+                    );
+
+                    processed_threads
+                }
+                Err(error) => {
+                    error!("process_posts() iteration error: \'{}\'", error);
+
+                    0
+                }
+            };
+
+            let timeout_seconds = match processed_threads {
+                0..=256 => default_timeout_seconds,
+                256..=1024 => default_timeout_seconds * 2,
+                1024..=4096 => default_timeout_seconds * 3,
+                _ => default_timeout_seconds * 5,
+            };
 
             info!("thread_watcher_loop() sleeping for {timeout_seconds} seconds...");
             sleep(Duration::from_secs(timeout_seconds)).await;
@@ -127,13 +143,13 @@ async fn process_watched_threads(
     database: &Arc<Database>,
     site_repository: &Arc<SiteRepository>,
     fcm_sender: &Arc<FcmSender>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<usize> {
     let all_watched_threads = post_repository::get_all_watched_threads(database)
         .await.context("process_watched_threads() Failed to get all watched threads")?;
 
     if all_watched_threads.is_empty() {
         info!("process_watched_threads() no watched threads to process");
-        return Ok(());
+        return Ok(0);
     }
 
     let mut chunk_size: usize = (num_cpus * 4) as usize;
@@ -185,7 +201,7 @@ async fn process_watched_threads(
     let delta = chrono::offset::Utc::now() - send_fcm_messages_start;
     info!("process_watched_threads() sending out FCM messages done, took {} ms, success!", delta.num_milliseconds());
 
-    return Ok(());
+    return Ok(all_watched_threads.len());
 }
 
 async fn process_thread(
@@ -437,12 +453,12 @@ fn post_descriptor_db_ids_to_vec_of_unique_keys(
 #[test]
 fn test_regex() {
     let test_string = "<a href=\"#p251260223\" class=\"quotelink\">&gt;&gt;251260223</a>";
-    let captures = post_reply_quote_regex.captures(test_string).unwrap();
+    let captures = POST_REPLY_QUOTE_REGEX.captures(test_string).unwrap();
     assert_eq!(2, captures.len());
     assert_eq!("251260223", captures.get(1).unwrap().as_str());
 
     let test_string = "<a href=\"#p425813171\" class=\"quotelink\">&gt;&gt;425813171</a>";
-    let captures = post_reply_quote_regex.captures(test_string).unwrap();
+    let captures = POST_REPLY_QUOTE_REGEX.captures(test_string).unwrap();
     assert_eq!(2, captures.len());
     assert_eq!("425813171", captures.get(1).unwrap().as_str());
 }

@@ -20,7 +20,6 @@ use crate::router::router;
 use crate::service::fcm_sender::FcmSender;
 use crate::service::thread_watcher::ThreadWatcher;
 
-
 mod constants;
 mod model;
 mod service;
@@ -31,6 +30,14 @@ mod helpers;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let is_dev_build = i32::from_str(&env::var("DEVELOPMENT_BUILD")?)? == 1;
+    let timeout_seconds = env::var("THREAD_WATCHER_TIMEOUT_SECONDS")
+        .map(|value| u64::from_str(value.as_str()).unwrap())
+        .unwrap_or(60 as u64);
+    let connection_string = env::var("DATABASE_CONNECTION_STRING")
+        .context("Failed to read database connection string from Environment")?;
+    let firebase_api_key = env::var("FIREBASE_API_KEY")
+        .context("Failed to read firebase api key from Environment")?;
+
     init_logger(is_dev_build);
 
     info!("main() initializing the server");
@@ -39,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("main() detected cpu cores: {}", num_cpus);
 
     info!("main() initializing database...");
-    let database = Database::new(num_cpus).await?;
+    let database = Database::new(connection_string, num_cpus).await?;
     let database = Arc::new(database);
     info!("main() initializing database... done");
 
@@ -57,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let fcm_sender = FcmSender::new(
         is_dev_build,
+        firebase_api_key,
         &database.clone(),
         &site_repository.clone()
     );
@@ -67,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .context("Failed to init post_descriptor_id_repository")?;
 
     tokio::task::spawn(async move {
-        let mut thread_watcher = ThreadWatcher::new(num_cpus);
+        let mut thread_watcher = ThreadWatcher::new(num_cpus, timeout_seconds);
 
         thread_watcher.start(
             &database_cloned_for_watcher,

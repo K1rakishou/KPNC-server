@@ -1,9 +1,10 @@
 use std::env;
 use std::sync::Arc;
+
 use anyhow::{anyhow, Context};
 use bb8::{Pool, PooledConnection};
 use bb8_postgres::PostgresConnectionManager;
-use tokio_postgres::{NoTls};
+use tokio_postgres::NoTls;
 
 pub struct Database {
     pool: Arc<Pool<PostgresConnectionManager<NoTls>>>
@@ -12,10 +13,7 @@ pub struct Database {
 pub type PgPooledConnection<'a> = PooledConnection<'a, PostgresConnectionManager<NoTls>>;
 
 impl Database {
-    pub async fn new(cpu_cores_count: u32) -> anyhow::Result<Database> {
-        let connection_string = env::var("DATABASE_CONNECTION_STRING")
-            .context("Failed to read database connection string from Environment")?;
-        
+    pub async fn new(connection_string: String, cpu_cores_count: u32) -> anyhow::Result<Database> {
         let manager = PostgresConnectionManager::new_from_stringlike(
             connection_string,
             NoTls

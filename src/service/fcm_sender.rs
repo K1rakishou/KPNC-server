@@ -19,6 +19,7 @@ lazy_static! {
 
 pub struct FcmSender {
     is_dev_build: bool,
+    firebase_api_key: String,
     database: Arc<Database>,
     site_repository: Arc<SiteRepository>
 }
@@ -31,11 +32,13 @@ struct NewFcmRepliesMessage {
 impl FcmSender {
     pub fn new(
         is_dev_build: bool,
+        firebase_api_key: String,
         database: &Arc<Database>,
         site_repository: &Arc<SiteRepository>
     ) -> FcmSender {
         return FcmSender {
             is_dev_build,
+            firebase_api_key,
             database: database.clone(),
             site_repository: site_repository.clone()
         };
@@ -54,24 +57,21 @@ impl FcmSender {
 
         info!("send_fcm_messages() Got {} unsent replies", unsent_replies.len());
 
-        let firebase_api_key = std::env::var("FIREBASE_API_KEY")
-            .context("Failed to read firebase api key from Environment")?;
-        let firebase_api_key = Arc::new(firebase_api_key);
-
+        let firebase_api_key = Arc::new(self.firebase_api_key.clone());
         let capacity = unsent_replies.len() / 2;
         let sent_post_reply_ids_set =
             Arc::new(RwLock::new(HashSet::<i64>::with_capacity(capacity)));
         let failed_to_send_post_reply_ids_set =
             Arc::new(RwLock::new(HashSet::<i64>::with_capacity(capacity)));
         let mut join_handles: Vec<JoinHandle<()>> = Vec::with_capacity(chunk_size);
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(chunk_size));
 
-        // TODO: need to somehow limit concurrency here, otherwise in case of lots of messages to
-        //  send this will spawn as many tasks as many accounts have unsent replies
         for (firebase_token, unsent_replies) in unsent_replies {
             if unsent_replies.is_empty() {
                 continue;
             }
 
+            let semaphore_permit = semaphore.clone().acquire_owned().await?;
             let successfully_sent_cloned = sent_post_reply_ids_set.clone();
             let failed_to_send_post_reply_ids_cloned = failed_to_send_post_reply_ids_set.clone();
             let firebase_api_key_cloned = firebase_api_key.clone();
@@ -79,7 +79,7 @@ impl FcmSender {
             let site_repository_cloned = self.site_repository.clone();
 
             let join_handle = tokio::task::spawn(async move {
-                send_unsent_reply(
+                let result = send_unsent_reply(
                     &FCM_CLIENT,
                     &firebase_api_key_cloned,
                     &firebase_token_cloned,
@@ -87,7 +87,10 @@ impl FcmSender {
                     &successfully_sent_cloned,
                     &failed_to_send_post_reply_ids_cloned,
                     &site_repository_cloned
-                ).await.unwrap();
+                ).await;
+
+                drop(semaphore_permit);
+                result.unwrap();
             });
 
             join_handles.push(join_handle);
