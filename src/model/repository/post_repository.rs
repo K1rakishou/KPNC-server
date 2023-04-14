@@ -71,7 +71,7 @@ pub async fn start_watching_post(
     ).await?.get(0);
 
     let query = r#"
-        INSERT INTO watches(
+        INSERT INTO post_watches(
             owner_post_id,
             owner_account_id
         )
@@ -187,7 +187,7 @@ pub async fn find_new_replies(
             posts.owner_post_descriptor_id,
             account.id_generated
         FROM posts
-             LEFT JOIN watches watch on posts.id_generated = watch.owner_post_id
+             LEFT JOIN post_watches watch on posts.id_generated = watch.owner_post_id
              LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
              LEFT JOIN post_replies post_reply on posts.id_generated = post_reply.owner_post_descriptor_id
         WHERE

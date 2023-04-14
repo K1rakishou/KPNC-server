@@ -52,7 +52,7 @@ CREATE UNIQUE INDEX owner_post_descriptor_id_idx ON posts (owner_post_descriptor
 CREATE INDEX posts_created_on_idx ON posts (created_on);
 CREATE INDEX posts_deleted_on_idx ON posts (deleted_on);
 
-CREATE TABLE IF NOT EXISTS watches
+CREATE TABLE IF NOT EXISTS post_watches
 (
     id_generated        BIGSERIAL NOT NULL,
     owner_post_id       INT8 NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS watches
 );
 
 CREATE UNIQUE INDEX watches_owner_post_id_owner_post_id_idx
-    ON watches (owner_post_id, owner_account_id);
+    ON post_watches (owner_post_id, owner_account_id);
 
 CREATE TABLE IF NOT EXISTS post_replies
 (
