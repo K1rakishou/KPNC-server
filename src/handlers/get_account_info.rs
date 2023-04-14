@@ -1,15 +1,17 @@
 use std::sync::Arc;
+
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use http_body_util::{BodyExt, Full};
-use hyper::{Response};
+use hyper::Response;
 use hyper::body::{Bytes, Incoming};
 use serde::{Deserialize, Serialize};
+
 use crate::handlers::shared::{ContentType, error_response, success_response};
+use crate::helpers::serde_helpers::serialize_datetime;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
 use crate::model::repository::account_repository::AccountId;
-use crate::helpers::serde_helpers::serialize_datetime;
 
 #[derive(Deserialize)]
 struct AccountInfoRequest {
@@ -24,7 +26,7 @@ struct AccountInfoResponse {
 }
 
 pub async fn handle(
-    query: &str,
+    _query: &str,
     body: Incoming,
     database: &Arc<Database>
 ) -> anyhow::Result<Response<Full<Bytes>>> {

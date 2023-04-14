@@ -1,18 +1,20 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
+
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
-use tokio::sync::RwLock;
 use lazy_static::lazy_static;
+use tokio::sync::RwLock;
 use tokio_postgres::Row;
+
 use crate::constants;
-use crate::helpers::hashers::Sha3_512_Hashable;
-use crate::model::database::db::Database;
+use crate::helpers::hashers::Sha512Hashable;
 use crate::helpers::string_helpers::FormatToken;
+use crate::model::database::db::Database;
 
 lazy_static! {
-    static ref accounts_cache: RwLock<HashMap<AccountId, Account>> = RwLock::new(HashMap::with_capacity(1024));
+    static ref ACCOUNTS_CACHE: RwLock<HashMap<AccountId, Account>> = RwLock::new(HashMap::with_capacity(1024));
 }
 
 #[derive(Clone)]
@@ -173,7 +175,7 @@ pub async fn get_account(
     account_id: &AccountId
 ) -> anyhow::Result<Option<Account>> {
     let from_cache = {
-        accounts_cache.read()
+        ACCOUNTS_CACHE.read()
             .await
             .get(account_id)
             .cloned()
@@ -209,7 +211,7 @@ pub async fn get_account(
     let account = account.unwrap();
 
     {
-        let mut cache = accounts_cache.write().await;
+        let mut cache = ACCOUNTS_CACHE.write().await;
         cache.insert(account.account_id.clone(), account.clone());
     };
 
@@ -239,7 +241,7 @@ pub async fn create_account(
     ).await?;
 
     {
-        let mut accounts_locked = accounts_cache.write().await;
+        let mut accounts_locked = ACCOUNTS_CACHE.write().await;
 
         let existing_account = accounts_locked.get_mut(account_id);
         if existing_account.is_some() {
@@ -282,7 +284,7 @@ pub async fn update_firebase_token(
         .context("update_account() Failed to update firebase_token in the database")?;
 
     {
-        let mut accounts_locked = accounts_cache.write().await;
+        let mut accounts_locked = ACCOUNTS_CACHE.write().await;
 
         let existing_account = accounts_locked.get_mut(account_id);
         if existing_account.is_some() {

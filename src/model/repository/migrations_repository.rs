@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
 use refinery::Migration;
 use tokio_postgres::{Row, Transaction};
-use crate::helpers::hashers::Sha3_512_Hashable;
+
+use crate::helpers::hashers::Sha512Hashable;
 use crate::model::database::db::{Database, PgPooledConnection};
 
 mod embedded {
     use refinery::embed_migrations;
+
     embed_migrations!("migrations");
 }
 

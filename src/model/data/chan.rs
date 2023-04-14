@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio_postgres::Row;
 
 lazy_static! {
-    static ref domains: RwLock<HashMap<&'static str, &'static str>> = RwLock::new(create_domains_map());
+    static ref DOMAINS: RwLock<HashMap<&'static str, &'static str>> = RwLock::new(create_domains_map());
 }
 
 fn create_domains_map() -> HashMap<&'static str, &'static str> {
@@ -71,7 +71,7 @@ impl SiteDescriptor {
     }
 
     pub fn from_str(site_name: &str) -> SiteDescriptor {
-        let domains_locked = domains.write().unwrap();
+        let domains_locked = DOMAINS.write().unwrap();
         let site_name_mapped = domains_locked.get(site_name);
         let mut site_name_actual = site_name;
 

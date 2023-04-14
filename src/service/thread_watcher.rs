@@ -1,5 +1,5 @@
-use std::env;
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +18,7 @@ use crate::model::repository::site_repository::SiteRepository;
 use crate::service::fcm_sender::FcmSender;
 
 lazy_static! {
-    static ref post_reply_quote_regex: Regex =
+    static ref POST_REPLY_QUOTE_REGEX: Regex =
         Regex::new(r##"<a\s+href="#p(\d+)"\s+class="quotelink">&gt;&gt;\d+</a>"##).unwrap();
 }
 
@@ -118,14 +118,6 @@ impl ThreadWatcher {
 
         info!("ThreadWatcher terminated");
         return Ok(());
-    }
-
-    pub async fn stop(&mut self) {
-        if !self.working {
-            panic!("ThreadWatcher is not working!")
-        }
-
-        self.working = false;
     }
 
 }
@@ -343,7 +335,7 @@ async fn process_posts(
             continue;
         }
 
-        let captures_iter = post_reply_quote_regex.captures_iter(post_comment);
+        let captures_iter = POST_REPLY_QUOTE_REGEX.captures_iter(post_comment);
         for captures in captures_iter {
             let quote_post_no_str = captures
                 .get(1)

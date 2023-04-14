@@ -9,7 +9,7 @@ use crate::model::data::chan::{PostDescriptor, SiteDescriptor, ThreadDescriptor}
 use crate::model::imageboards::base_imageboard::Imageboard;
 
 lazy_static! {
-    static ref post_url_regex: Regex =
+    static ref POST_URL_REGEX: Regex =
         Regex::new(r"https://boards.(\w+).org/(\w+)/thread/(\d+)(?:#p(\d+))?").unwrap();
 }
 
@@ -53,7 +53,7 @@ impl Imageboard for Chan4 {
             return None;
         }
 
-        let captures = post_url_regex.captures(post_url);
+        let captures = POST_URL_REGEX.captures(post_url);
         if captures.is_none() {
             return None;
         }
@@ -77,7 +77,7 @@ impl Imageboard for Chan4 {
         }
         let thread_no = thread_no.unwrap();
 
-        let mut post_no = captures.get(4).map(|post_no| post_no.as_str()).unwrap_or("");
+        let post_no = captures.get(4).map(|post_no| post_no.as_str()).unwrap_or("");
         if post_no.is_empty() {
             return None;
         }

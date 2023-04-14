@@ -14,7 +14,7 @@ use crate::model::repository::post_reply_repository::UnsentReply;
 use crate::model::repository::site_repository::SiteRepository;
 
 lazy_static! {
-    static ref fcm_client: fcm::Client = fcm::Client::new();
+    static ref FCM_CLIENT: fcm::Client = fcm::Client::new();
 }
 
 pub struct FcmSender {
@@ -80,7 +80,7 @@ impl FcmSender {
 
             let join_handle = tokio::task::spawn(async move {
                 send_unsent_reply(
-                    &fcm_client,
+                    &FCM_CLIENT,
                     &firebase_api_key_cloned,
                     &firebase_token_cloned,
                     &unsent_replies,

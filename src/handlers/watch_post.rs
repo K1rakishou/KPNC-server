@@ -1,12 +1,14 @@
 use std::sync::Arc;
+
 use anyhow::Context;
 use http_body_util::{BodyExt, Full};
-use hyper::{Response};
+use hyper::Response;
 use hyper::body::{Bytes, Incoming};
-use serde::{Deserialize};
+use serde::Deserialize;
+
 use crate::handlers::shared::{ContentType, empty_success_response, error_response, error_response_string, validate_post_url};
 use crate::model::database::db::Database;
-use crate::model::repository::account_repository::{AccountId};
+use crate::model::repository::account_repository::AccountId;
 use crate::model::repository::post_repository;
 use crate::model::repository::post_repository::StartWatchingPostResult;
 use crate::model::repository::site_repository::SiteRepository;
@@ -18,7 +20,7 @@ struct WatchPostRequest {
 }
 
 pub async fn handle(
-    query: &str,
+    _query: &str,
     body: Incoming,
     database: &Arc<Database>,
     site_repository: &Arc<SiteRepository>

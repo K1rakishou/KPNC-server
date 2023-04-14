@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use http_body_util::{BodyExt, Full};
-use hyper::Response;
 use hyper::body::{Bytes, Incoming};
+use hyper::Response;
 use serde::Deserialize;
 
 use crate::handlers::shared::{ContentType, empty_success_response, error_response_string};
@@ -19,7 +19,7 @@ struct UpdateFirebaseTokenRequest {
 }
 
 pub async fn handle(
-    query: &str,
+    _query: &str,
     body: Incoming,
     database: &Arc<Database>
 ) -> anyhow::Result<Response<Full<Bytes>>> {
