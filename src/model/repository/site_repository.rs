@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use std::sync::{Arc};
-use crate::model::data::chan::ThreadDescriptor;
+use std::sync::Arc;
+
+use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::imageboards::base_imageboard::Imageboard;
 use crate::model::imageboards::chan4::Chan4;
 
@@ -33,9 +34,20 @@ impl SiteRepository {
 
     pub fn thread_json_endpoint(&self, thread_descriptor: &ThreadDescriptor) -> Option<String> {
         for (_, imageboard) in &self.sites {
-            let matches = imageboard.matches(&thread_descriptor.catalog_descriptor.site_descriptor);
+            let matches = imageboard.matches(&thread_descriptor.site_descriptor());
             if matches {
                 return imageboard.thread_json_endpoint(thread_descriptor);
+            }
+        }
+
+        return None;
+    }
+
+    pub fn to_url(&self, post_descriptor: &PostDescriptor) -> Option<String> {
+        for (_, imageboard) in &self.sites {
+            let matches = imageboard.matches(&post_descriptor.site_descriptor());
+            if matches {
+                return imageboard.post_descriptor_to_url(post_descriptor);
             }
         }
 

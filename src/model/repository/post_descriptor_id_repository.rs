@@ -1,10 +1,13 @@
-use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+use lazy_static::lazy_static;
 use tokio::sync::{RwLock, RwLockWriteGuard};
 use tokio_postgres::Transaction;
+
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
+use crate::service::thread_watcher::FoundPostReply;
 
 lazy_static! {
     static ref pd_to_td_cache: RwLock<HashMap<ThreadDescriptor, HashSet<PostDescriptor>>> =
@@ -63,18 +66,23 @@ pub async fn get_post_descriptor_db_id(post_descriptor: &PostDescriptor) -> i64 
     return *pd_to_dbid_cache_locked.get(post_descriptor).unwrap();
 }
 
-pub async fn get_many_post_descriptor_db_ids(post_descriptors: &Vec<&PostDescriptor>) -> Vec<i64> {
+pub async fn get_many_post_descriptor_db_ids<'a>(
+    post_replies: &Vec<&'a FoundPostReply>
+) -> HashMap<i64, Vec<&'a FoundPostReply>> {
     let pd_to_dbid_cache_locked = pd_to_dbid_cache.read().await;
-    let mut result_vec = Vec::<i64>::with_capacity(post_descriptors.len());
+    let mut result_map = HashMap::<i64, Vec<&'a FoundPostReply>>::with_capacity(post_replies.len());
 
-    for post_descriptor in post_descriptors {
-        let post_descriptor_db_id = pd_to_dbid_cache_locked.get(post_descriptor);
+    for post_reply in post_replies {
+        let post_descriptor_db_id = pd_to_dbid_cache_locked.get(&post_reply.replies_to);
         if post_descriptor_db_id.is_some() {
-            result_vec.push(*post_descriptor_db_id.unwrap());
+            let post_descriptor_db_id = *post_descriptor_db_id.unwrap();
+
+            let posts_vec = result_map.entry(post_descriptor_db_id).or_insert(Vec::new());
+            posts_vec.push(post_reply);
         }
     }
 
-    return result_vec;
+    return result_map;
 }
 
 pub async fn get_many_post_descriptors_by_db_ids(db_ids: Vec<i64>) -> Vec<PostDescriptor> {
@@ -139,7 +147,6 @@ pub async fn get_thread_post_db_ids(thread_descriptor: &ThreadDescriptor) -> Vec
     return result_vec;
 }
 
-
 pub async fn insert_descriptor_db_id(
     post_descriptor: &PostDescriptor,
     transaction: &Transaction<'_>
@@ -186,6 +193,78 @@ pub async fn insert_descriptor_db_id(
     dbid_to_pd_cache_locked.insert(id_generated, post_descriptor.clone());
 
     return Ok(id_generated);
+}
+
+pub async fn insert_descriptor_db_ids<'a>(
+    post_descriptors: &Vec<&'a PostDescriptor>,
+    transaction: &Transaction<'_>
+) -> anyhow::Result<HashMap<&'a PostDescriptor, i64>> {
+    if post_descriptors.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut result_map = HashMap::<&PostDescriptor, i64>::with_capacity(post_descriptors.len());
+
+    let mut post_descriptors_to_insert =
+        Vec::<&PostDescriptor>::with_capacity(post_descriptors.len() / 2);
+
+    {
+        let pd_to_dbid_cache_locked = pd_to_dbid_cache.read().await;
+
+        for post_descriptor in post_descriptors {
+            let id_generated = pd_to_dbid_cache_locked.get(post_descriptor);
+            if id_generated.is_some() {
+                // return Ok(*id_generated.unwrap());
+                result_map.insert(post_descriptor, *id_generated.unwrap());
+            } else {
+                post_descriptors_to_insert.push(post_descriptor);
+            }
+        }
+    }
+
+    if post_descriptors_to_insert.is_empty() {
+        // All post descriptors were already cached
+        return Ok(result_map);
+    }
+
+    let query = r#"
+        INSERT INTO post_descriptors
+        (
+            site_name,
+            board_code,
+            thread_no,
+            post_no,
+            post_sub_no
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id_generated
+"#;
+
+    // TODO: this might be slow
+    for post_descriptor in post_descriptors_to_insert {
+        let id_generated: i64 = transaction.query_one(
+            query,
+            &[
+                post_descriptor.site_name(),
+                post_descriptor.board_code(),
+                &(post_descriptor.thread_no() as i64),
+                &(post_descriptor.post_no as i64),
+                &(post_descriptor.post_sub_no as i64)
+            ],
+        ).await?.get(0);
+
+        let mut pd_to_dbid_cache_locked = pd_to_dbid_cache.write().await;
+        let mut dbid_to_pd_cache_locked = dbid_to_pd_cache.write().await;
+        let mut pd_to_td_cache_locked = pd_to_td_cache.write().await;
+
+        insert_pd_for_td(&post_descriptor, &mut pd_to_td_cache_locked);
+        pd_to_dbid_cache_locked.insert(post_descriptor.clone(), id_generated);
+        dbid_to_pd_cache_locked.insert(id_generated, post_descriptor.clone());
+
+        result_map.insert(post_descriptor, id_generated);
+    }
+
+    return Ok(result_map);
 }
 
 fn insert_pd_for_td(

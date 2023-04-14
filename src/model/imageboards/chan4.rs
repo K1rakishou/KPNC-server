@@ -1,7 +1,9 @@
 use std::str::FromStr;
+
 use lazy_static::lazy_static;
 use regex::Regex;
 use url::Url;
+
 use crate::helpers::string_helpers;
 use crate::model::data::chan::{PostDescriptor, SiteDescriptor, ThreadDescriptor};
 use crate::model::imageboards::base_imageboard::Imageboard;
@@ -95,6 +97,29 @@ impl Imageboard for Chan4 {
         );
 
         return Some(post_descriptor);
+    }
+
+    fn post_descriptor_to_url(&self, post_descriptor: &PostDescriptor) -> Option<String> {
+        let mut string_builder = string_builder::Builder::new(72);
+
+        string_builder.append("https://boards.");
+        string_builder.append(post_descriptor.site_name().as_str());
+        string_builder.append(".org");
+        string_builder.append("/");
+        string_builder.append(post_descriptor.board_code().as_str());
+        string_builder.append("/");
+        string_builder.append("thread");
+        string_builder.append("/");
+        string_builder.append(post_descriptor.thread_no().to_string());
+        string_builder.append("#p");
+        string_builder.append(post_descriptor.post_no.to_string());
+
+        let string = string_builder.string();
+        if string.is_err() {
+            return None;
+        }
+
+        return Some(string.unwrap());
     }
 
     fn thread_json_endpoint(

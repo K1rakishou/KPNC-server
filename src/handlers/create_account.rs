@@ -1,12 +1,14 @@
 use std::sync::Arc;
+
 use anyhow::Context;
 use http_body_util::{BodyExt, Full};
-use hyper::{Response};
+use hyper::Response;
 use hyper::body::{Bytes, Incoming};
-use serde::{Deserialize};
-use crate::handlers::shared::{ContentType, empty_success_response, error_response, error_response_string};
+use serde::Deserialize;
+
+use crate::handlers::shared::{ContentType, empty_success_response, error_response};
 use crate::model::database::db::Database;
-use crate::model::repository::account_repository::{CreateAccountResult, FirebaseToken, AccountId};
+use crate::model::repository::account_repository::{AccountId, CreateAccountResult};
 use crate::model::repository::account_repository;
 
 #[derive(Deserialize)]

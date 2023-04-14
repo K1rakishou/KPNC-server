@@ -1,6 +1,7 @@
-use std::fmt::{Display, Formatter};
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::sync::RwLock;
+
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Row;
@@ -120,6 +121,10 @@ impl Display for ThreadDescriptor {
 }
 
 impl ThreadDescriptor {
+    pub fn site_descriptor(&self) -> &SiteDescriptor {
+        return &self.catalog_descriptor.site_descriptor;
+    }
+
     pub fn site_name(&self) -> &String {
         return &self.catalog_descriptor.site_descriptor.site_name;
     }
@@ -174,6 +179,10 @@ impl Display for PostDescriptor {
 }
 
 impl PostDescriptor {
+    pub fn site_descriptor(&self) -> &SiteDescriptor {
+        return &self.thread_descriptor.site_descriptor();
+    }
+
     pub fn site_name(&self) -> &String {
         return &self.thread_descriptor.site_name();
     }

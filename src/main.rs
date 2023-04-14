@@ -1,21 +1,25 @@
+#[macro_use]
+extern crate log;
+
 use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+
 use anyhow::Context;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use log::LevelFilter;
 use tokio::net::TcpListener;
+
 use crate::model::database::db::Database;
 use crate::model::repository::migrations_repository::perform_migrations;
 use crate::model::repository::post_descriptor_id_repository;
 use crate::model::repository::site_repository::SiteRepository;
 use crate::router::router;
+use crate::service::fcm_sender::FcmSender;
 use crate::service::thread_watcher::ThreadWatcher;
 
-#[macro_use]
-extern crate log;
 
 mod constants;
 mod model;
@@ -51,6 +55,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let database_cloned_for_watcher = database.clone();
     let site_repository_for_watcher = site_repository.clone();
 
+    let fcm_sender = FcmSender::new(
+        is_dev_build,
+        &database.clone(),
+        &site_repository.clone()
+    );
+    let fcm_sender = Arc::new(fcm_sender);
+
     post_descriptor_id_repository::init(&database)
         .await
         .context("Failed to init post_descriptor_id_repository")?;
@@ -60,7 +71,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         thread_watcher.start(
             &database_cloned_for_watcher,
-            &site_repository_for_watcher
+            &site_repository_for_watcher,
+            &fcm_sender
         ).await.unwrap();
     });
 

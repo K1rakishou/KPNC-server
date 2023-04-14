@@ -1,14 +1,16 @@
 use std::sync::Arc;
+
 use anyhow::Context;
 use http_body_util::{BodyExt, Full};
-use hyper::{Response};
+use hyper::Response;
 use hyper::body::{Bytes, Incoming};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
 use crate::handlers::shared::{ContentType, empty_success_response, error_response_string};
+use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
-use crate::model::repository::account_repository::{FirebaseToken, UpdateFirebaseTokenResult, AccountId};
-use crate::helpers::string_helpers::FormatToken;
+use crate::model::repository::account_repository::{AccountId, FirebaseToken, UpdateFirebaseTokenResult};
 
 #[derive(Deserialize)]
 struct UpdateFirebaseTokenRequest {

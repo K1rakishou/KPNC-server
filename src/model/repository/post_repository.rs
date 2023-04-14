@@ -1,6 +1,8 @@
 use std::sync::Arc;
+
 use anyhow::Context;
 use tokio_postgres::Row;
+
 use crate::helpers::db_helpers;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
@@ -182,15 +184,14 @@ pub async fn find_new_replies(
 ) -> anyhow::Result<Vec<PostReply>> {
     let query_start = r#"
         SELECT
-            posts.id_generated,
-            account.id_generated,
-            post_reply.created_on
+            posts.owner_post_descriptor_id,
+            account.id_generated
         FROM posts
              LEFT JOIN watches watch on posts.id_generated = watch.owner_post_id
              LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
              LEFT JOIN post_replies post_reply on posts.id_generated = post_reply.owner_post_descriptor_id
         WHERE
-            posts.id_generated IN "#;
+            posts.owner_post_descriptor_id IN "#;
 
     let query_end = r#"
         AND
@@ -208,18 +209,18 @@ pub async fn find_new_replies(
 
     let rows = connection.query(&statement, &query_params[..]).await?;
     if rows.is_empty() {
-        debug!("process_posts({}) end. No accounts found related to post watchers", thread_descriptor);
+        debug!("process_posts({}) end. No posts found related to post watchers", thread_descriptor);
         return Ok(vec![]);
     }
 
     let mut post_replies = Vec::<PostReply>::with_capacity(rows.len());
 
     for row in rows {
-        let post_id_generated: i64 = row.get(0);
+        let post_descriptor_id: i64 = row.get(0);
         let account_id_generated: i64 = row.get(1);
 
         let post_reply = PostReply {
-            owner_post_descriptor_id: post_id_generated,
+            owner_post_descriptor_id: post_descriptor_id,
             owner_account_id: account_id_generated
         };
 

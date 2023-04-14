@@ -1,18 +1,21 @@
-use std::{env};
-use std::collections::{HashSet};
+use std::env;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+
 use anyhow::{anyhow, Context};
 use lazy_static::lazy_static;
 use regex::Regex;
+use serde::Deserialize;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use serde::{Deserialize};
+
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, post_repository};
 use crate::model::repository::site_repository::SiteRepository;
+use crate::service::fcm_sender::FcmSender;
 
 lazy_static! {
     static ref post_reply_quote_regex: Regex =
@@ -22,6 +25,12 @@ lazy_static! {
 pub struct ThreadWatcher {
     num_cpus: u32,
     working: bool
+}
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub struct FoundPostReply {
+    pub origin: PostDescriptor,
+    pub replies_to: PostDescriptor
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,7 +80,8 @@ impl ThreadWatcher {
     pub async fn start(
         &mut self,
         database: &Arc<Database>,
-        site_repository: &Arc<SiteRepository>
+        site_repository: &Arc<SiteRepository>,
+        fcm_sender: &Arc<FcmSender>,
     ) -> anyhow::Result<()> {
         if self.working {
             panic!("ThreadWatcher already working!")
@@ -89,7 +99,13 @@ impl ThreadWatcher {
                 break;
             }
 
-            let result = process_watched_threads(self.num_cpus, database, site_repository).await;
+            let result = process_watched_threads(
+                self.num_cpus,
+                database,
+                site_repository,
+                fcm_sender
+            ).await;
+
             match result {
                 Ok(_) => { info!("thread_watcher_loop() iteration success") }
                 Err(error) => { error!("process_posts() iteration error: \'{}\'", error) }
@@ -117,7 +133,8 @@ impl ThreadWatcher {
 async fn process_watched_threads(
     num_cpus: u32,
     database: &Arc<Database>,
-    site_repository: &Arc<SiteRepository>
+    site_repository: &Arc<SiteRepository>,
+    fcm_sender: &Arc<FcmSender>,
 ) -> anyhow::Result<()> {
     let all_watched_threads = post_repository::get_all_watched_threads(database)
         .await.context("process_watched_threads() Failed to get all watched threads")?;
@@ -126,7 +143,6 @@ async fn process_watched_threads(
         info!("process_watched_threads() no watched threads to process");
         return Ok(());
     }
-
 
     let mut chunk_size: usize = (num_cpus * 4) as usize;
     if chunk_size < 8 {
@@ -141,6 +157,8 @@ async fn process_watched_threads(
         all_watched_threads.len(),
         chunk_size
     );
+
+    let process_threads_start = chrono::offset::Utc::now();
 
     for thread_descriptors in all_watched_threads.chunks(chunk_size) {
         let mut join_handles: Vec<JoinHandle<()>> = Vec::with_capacity(chunk_size);
@@ -164,8 +182,16 @@ async fn process_watched_threads(
         futures::future::join_all(join_handles).await;
     }
 
-    info!("process_watched_threads() processing done");
-    // TODO: send GCM messages
+    let delta = chrono::offset::Utc::now() - process_threads_start;
+    let send_fcm_messages_start = chrono::offset::Utc::now();
+    info!("process_watched_threads() processing done, took {} ms, sending out FCM messages...", delta.num_milliseconds());
+
+    fcm_sender.send_fcm_messages(chunk_size)
+        .await
+        .context("Error while trying to send out FCM messages")?;
+
+    let delta = chrono::offset::Utc::now() - send_fcm_messages_start;
+    info!("process_watched_threads() sending out FCM messages done, took {} ms, success!", delta.num_milliseconds());
 
     return Ok(());
 }
@@ -301,7 +327,15 @@ async fn process_posts(
     database: &Arc<Database>
 ) -> anyhow::Result<()> {
     debug!("process_posts({}) start", thread_descriptor);
-    let mut reply_quotes_set = HashSet::<PostDescriptor>::with_capacity(32);
+
+    if chan_thread.posts.is_empty() {
+        info!("process_posts({}) no posts to process", thread_descriptor);
+        return Ok(());
+    }
+
+    // TODO: read last processed post here and do not do anything to posts that are less than the
+    //  last processed post
+    let mut found_post_replies_set = HashSet::<FoundPostReply>::with_capacity(32);
 
     for post in &chan_thread.posts {
         let post_comment = post.com.as_ref().map(|com| com.as_str()).unwrap_or("");
@@ -309,43 +343,54 @@ async fn process_posts(
             continue;
         }
 
-        let captures = post_reply_quote_regex.captures(post_comment);
-        if captures.is_none() {
-            continue;
+        let captures_iter = post_reply_quote_regex.captures_iter(post_comment);
+        for captures in captures_iter {
+            let quote_post_no_str = captures
+                .get(1)
+                .map(|capture| capture.as_str())
+                .unwrap_or("");
+
+            if quote_post_no_str.is_empty() {
+                continue;
+            }
+
+            let quote_post_no = u64::from_str(quote_post_no_str).unwrap_or(0);
+            if quote_post_no == 0 {
+                continue;
+            }
+
+            let origin = PostDescriptor::from_thread_descriptor(
+                thread_descriptor.clone(),
+                post.no
+            );
+
+            let replies_to = PostDescriptor::from_thread_descriptor(
+                thread_descriptor.clone(),
+                quote_post_no
+            );
+
+            let post_reply = FoundPostReply {
+                origin,
+                replies_to
+            };
+
+            found_post_replies_set.insert(post_reply);
         }
-
-        let quote_post_no_str = captures.unwrap()
-            .get(1)
-            .map(|capture| capture.as_str())
-            .unwrap_or("");
-
-        if quote_post_no_str.is_empty() {
-            continue;
-        }
-
-        let quote_post_no = u64::from_str(quote_post_no_str).unwrap_or(0);
-        if quote_post_no == 0 {
-            continue;
-        }
-
-        let post_descriptor = PostDescriptor::from_thread_descriptor(
-            thread_descriptor.clone(),
-            quote_post_no
-        );
-
-        reply_quotes_set.insert(post_descriptor);
     }
 
-    if reply_quotes_set.is_empty() {
-        debug!("process_posts({}) end. No quotes found", thread_descriptor);
+    // TODO: store last processed post descriptor in the database so that we don't need to recheck
+    //  the same posts again and again while a thread is alive.
+
+    if found_post_replies_set.is_empty() {
+        debug!("process_posts({}) end. No post replies found", thread_descriptor);
         return Ok(());
     }
 
-    debug!("process_posts({}) found {} quotes", thread_descriptor, reply_quotes_set.len());
-    let reply_quotes = reply_quotes_set.iter().collect::<Vec<&PostDescriptor>>();
+    debug!("process_posts({}) found {} quotes", thread_descriptor, found_post_replies_set.len());
+    let found_post_replies = found_post_replies_set.iter().collect::<Vec<&FoundPostReply>>();
 
     let post_descriptor_db_ids = post_descriptor_id_repository::get_many_post_descriptor_db_ids(
-        &reply_quotes
+        &found_post_replies
     ).await;
 
     if post_descriptor_db_ids.is_empty() {
@@ -353,30 +398,48 @@ async fn process_posts(
         return Ok(());
     }
 
-    debug!(
-        "process_posts({}) found {} quotes matching post watchers",
-        thread_descriptor,
-        post_descriptor_db_ids.len()
-    );
-
     let post_replies = post_repository::find_new_replies(
         thread_descriptor,
         database,
-        &post_descriptor_db_ids
+        &post_descriptor_db_ids_to_vec_of_unique_keys(&post_descriptor_db_ids)
     ).await?;
 
-    debug!(
-        "process_posts({}) storing {} post replies into the database",
-        thread_descriptor,
-        post_replies.len()
-    );
+    if post_replies.len() > 0 {
+        debug!(
+            "process_posts({}) storing {} post replies into the database",
+            thread_descriptor,
+            post_replies.len()
+        );
 
-    post_reply_repository::store(&post_replies, database)
-        .await
-        .context(format!("Failed to store post {} replies", post_replies.len()))?;
+        post_reply_repository::store(&post_replies, &post_descriptor_db_ids, database)
+            .await
+            .context(format!("Failed to store post {} replies", post_replies.len()))?;
+    }
 
     debug!("process_posts({}) end. Success!", thread_descriptor);
     return Ok(());
+}
+
+fn post_descriptor_db_ids_to_vec_of_unique_keys(
+    post_descriptor_db_ids: &HashMap<i64, Vec<&FoundPostReply>>
+) -> Vec<i64> {
+    if post_descriptor_db_ids.is_empty() {
+        return vec![];
+    }
+
+    let capacity = post_descriptor_db_ids.iter().fold(0, |acc, item| acc + item.1.len());
+    let mut duplicates = HashSet::<i64>::with_capacity(capacity);
+    let mut result_vec = Vec::<i64>::with_capacity(capacity);
+
+    for key in post_descriptor_db_ids.keys() {
+        if !duplicates.insert(*key) {
+            continue;
+        }
+
+        result_vec.push(*key);
+    }
+
+    return result_vec;
 }
 
 #[test]
