@@ -19,9 +19,22 @@ lazy_static! {
 
 #[derive(Clone)]
 pub struct Account {
+    pub id_generated: i64,
     account_id: AccountId,
     firebase_token: Option<FirebaseToken>,
     pub valid_until: Option<DateTime<Utc>>
+}
+
+impl Account {
+    pub fn is_valid(&self) -> bool {
+        let valid_until = self.valid_until;
+        if valid_until.is_none() {
+            return false
+        }
+
+        let valid_until = valid_until.unwrap();
+        return valid_until >= chrono::Utc::now();
+    }
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -55,12 +68,12 @@ impl AccountId {
         return AccountId { id: account_id };
     }
 
-    pub fn from_email(email: &str) -> anyhow::Result<AccountId> {
-        if email.len() == 0 || email.len() > 100 {
-            return Err(anyhow!("Bad email length {} must be within 0..128", email.len()));
+    pub fn from_user_id(user_id: &str) -> anyhow::Result<AccountId> {
+        if user_id.len() < 32 || user_id.len() > 128 {
+            return Err(anyhow!("Bad user_id length {} must be within 32..128 symbols", user_id.len()));
         }
 
-        let account_id = AccountId { id: email.sha3_512(constants::USER_ID_HASH_ITERATIONS) };
+        let account_id = AccountId { id: user_id.sha3_512(constants::USER_ID_HASH_ITERATIONS) };
         return Ok(account_id);
     }
 }
@@ -126,41 +139,34 @@ impl Account {
     }
 
     pub fn new(
+        id_generated: i64,
         account_id: AccountId,
         firebase_token: Option<FirebaseToken>,
         valid_until: Option<DateTime<Utc>>
     ) -> Account {
         return Account {
+            id_generated,
             account_id,
             firebase_token,
             valid_until
         }
     }
 
-    pub fn new_with_token(
-        account_id: AccountId,
-        firebase_token: Option<FirebaseToken>
-    ) -> Account {
-        return Account {
-            account_id,
-            firebase_token,
-            valid_until: Option::None
-        }
-    }
-
     pub fn from_row(row: &Row) -> anyhow::Result<Account> {
-        let account_id: String = row.try_get(0)?;
+        let id_generated: i64 = row.try_get(0)?;
+        let account_id: String = row.try_get(1)?;
+        let firebase_token_result = row.try_get(2);
+        let valid_until: Option<DateTime<Utc>> = row.try_get(3)?;
 
-        let firebase_token_result = row.try_get(1);
         let firebase_token: Option<&str> = if firebase_token_result.is_err() {
             None
         } else {
             Some(firebase_token_result.unwrap())
         };
 
-        let valid_until: Option<DateTime<Utc>> = row.try_get(2)?;
 
         let account = Account {
+            id_generated,
             account_id: AccountId::new(account_id),
             firebase_token: FirebaseToken::from_opt_str(firebase_token)?,
             valid_until
@@ -171,8 +177,8 @@ impl Account {
 }
 
 pub async fn get_account(
+    account_id: &AccountId,
     database: &Arc<Database>,
-    account_id: &AccountId
 ) -> anyhow::Result<Option<Account>> {
     let from_cache = {
         ACCOUNTS_CACHE.read()
@@ -187,11 +193,15 @@ pub async fn get_account(
 
     let query = r#"
         SELECT
+            accounts.id_generated,
             accounts.account_id,
             accounts.firebase_token,
             accounts.valid_until
         FROM accounts
-        WHERE accounts.account_id = $1
+        WHERE
+            accounts.account_id = $1
+        AND
+            accounts.deleted_on IS NULL
 "#;
 
     let connection = database.connection().await?;
@@ -222,7 +232,7 @@ pub async fn create_account(
     account_id: &AccountId,
     valid_until: Option<&DateTime<Utc>>
 ) -> anyhow::Result<CreateAccountResult> {
-    let existing_account = get_account(database, account_id).await?;
+    let existing_account = get_account(account_id, database).await?;
     if existing_account.is_some() {
         warn!("create_account() account with id: {} already exists!", account_id);
         return Ok(CreateAccountResult::AccountAlreadyExists);
@@ -235,15 +245,16 @@ pub async fn create_account(
             valid_until
         )
         VALUES ($1, $2)
+        RETURNING accounts.id_generated
 "#;
 
     let connection = database.connection().await?;
     let statement = connection.prepare(query).await?;
 
-    connection.execute(
+    let id_generated: i64 = connection.query_one(
         &statement,
         &[&account_id.id, &valid_until]
-    ).await?;
+    ).await?.try_get(0)?;
 
     {
         let mut accounts_locked = ACCOUNTS_CACHE.write().await;
@@ -254,6 +265,7 @@ pub async fn create_account(
         }
 
         let new_account = Account::new(
+            id_generated,
             account_id.clone(),
             None,
             valid_until.cloned()
@@ -270,7 +282,7 @@ pub async fn update_firebase_token(
     account_id: &AccountId,
     firebase_token: &FirebaseToken
 ) -> anyhow::Result<UpdateFirebaseTokenResult> {
-    let existing_account = get_account(database, account_id).await?;
+    let existing_account = get_account(account_id, database).await?;
     if existing_account.is_none() {
         return Ok(UpdateFirebaseTokenResult::AccountDoesNotExist);
     }

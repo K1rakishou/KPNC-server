@@ -1,10 +1,13 @@
 use std::net::SocketAddr;
-use std::sync::{Arc};
+use std::sync::Arc;
+
 use http_body_util::Full;
 use hyper::{Request, Response};
 use hyper::body::Bytes;
-use crate::model::database::db::Database;
+
 use crate::handlers;
+use crate::handlers::shared::ContentType;
+use crate::model::database::db::Database;
 use crate::model::repository::site_repository::SiteRepository;
 
 pub async fn router(
@@ -53,8 +56,12 @@ pub async fn router(
 
         log::error!("Request to {} error: {:?}", path, handler_error);
 
-        let error_message = format!("Failed to process request, error: '{}'", handler_error_message);
-        let response = Response::new(Full::new(Bytes::from(error_message)));
+        let response_json = handlers::shared::error_response_string(&handler_error_message)?;
+        let response = Response::builder()
+            .json()
+            .status(200)
+            .body(Full::new(Bytes::from(response_json)))?;
+
         return Ok(response);
     } else {
         info!(

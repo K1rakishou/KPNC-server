@@ -10,5 +10,5 @@ pub fn serialize_datetime<S>(datetime: &Option<DateTime<Utc>>, serializer: S) ->
     }
 
     let datetime = datetime.unwrap();
-    return serializer.serialize_i64(datetime.timestamp());
+    return serializer.serialize_i64(datetime.timestamp_millis());
 }

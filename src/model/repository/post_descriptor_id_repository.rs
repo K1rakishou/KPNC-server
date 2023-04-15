@@ -10,29 +10,43 @@ use crate::model::database::db::Database;
 use crate::service::thread_watcher::FoundPostReply;
 
 lazy_static! {
-    static ref pd_to_td_cache: RwLock<HashMap<ThreadDescriptor, HashSet<PostDescriptor>>> =
+    static ref PD_TO_TD_CACHE: RwLock<HashMap<ThreadDescriptor, HashSet<PostDescriptor>>> =
         RwLock::new(HashMap::with_capacity(256));
-    static ref dbid_to_pd_cache: RwLock<HashMap<i64, PostDescriptor>> =
+    static ref DBID_TO_PD_CACHE: RwLock<HashMap<i64, PostDescriptor>> =
         RwLock::new(HashMap::with_capacity(4096));
-    static ref pd_to_dbid_cache: RwLock<HashMap<PostDescriptor, i64>> =
+    static ref PD_TO_DBID_CACHE: RwLock<HashMap<PostDescriptor, i64>> =
         RwLock::new(HashMap::with_capacity(4096));
 }
 
 pub async fn init(database: &Arc<Database>) -> anyhow::Result<()> {
     info!("init() start");
 
-    let mut loaded_post_descriptors = 0;
+    let query = r#"
+        SELECT
+            pd.id_generated,
+            pd.site_name,
+            pd.board_code,
+            pd.thread_no,
+            pd.post_no,
+            pd.post_sub_no
+        FROM post_descriptors as pd
+        LEFT JOIN posts post on pd.id_generated = post.owner_post_descriptor_id
+        WHERE
+            post.is_dead IS NOT TRUE
+          AND
+            post.deleted_on IS NULL
+"#;
 
-    let query = "SELECT * FROM post_descriptors";
     let connection = database.connection().await?;
     let rows = connection.query(query, &[]).await?;
 
+    let mut loaded_post_descriptors = 0;
     info!("init() found {} rows", rows.len());
 
     {
-        let mut pd_to_dbid_cache_locked = pd_to_dbid_cache.write().await;
-        let mut dbid_to_pd_cache_locked = dbid_to_pd_cache.write().await;
-        let mut pd_to_td_cache_locked = pd_to_td_cache.write().await;
+        let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
+        let mut dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.write().await;
+        let mut pd_to_td_cache_locked = PD_TO_TD_CACHE.write().await;
 
         for row in rows {
             let id_generated: i64 = row.get(0);
@@ -63,14 +77,14 @@ pub async fn init(database: &Arc<Database>) -> anyhow::Result<()> {
 }
 
 pub async fn get_post_descriptor_db_id(post_descriptor: &PostDescriptor) -> i64 {
-    let pd_to_dbid_cache_locked = pd_to_dbid_cache.read().await;
+    let pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.read().await;
     return *pd_to_dbid_cache_locked.get(post_descriptor).unwrap();
 }
 
 pub async fn get_many_post_descriptor_db_ids<'a>(
     post_replies: &Vec<&'a FoundPostReply>
 ) -> HashMap<i64, Vec<&'a FoundPostReply>> {
-    let pd_to_dbid_cache_locked = pd_to_dbid_cache.read().await;
+    let pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.read().await;
     let mut result_map = HashMap::<i64, Vec<&'a FoundPostReply>>::with_capacity(post_replies.len());
 
     for post_reply in post_replies {
@@ -87,7 +101,7 @@ pub async fn get_many_post_descriptor_db_ids<'a>(
 }
 
 pub async fn get_many_post_descriptors_by_db_ids(db_ids: Vec<i64>) -> Vec<PostDescriptor> {
-    let dbid_to_pd_cache_locked = dbid_to_pd_cache.read().await;
+    let dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.read().await;
     let mut result_vec = Vec::<PostDescriptor>::with_capacity(db_ids.len());
 
     for db_id in db_ids {
@@ -101,7 +115,7 @@ pub async fn get_many_post_descriptors_by_db_ids(db_ids: Vec<i64>) -> Vec<PostDe
 }
 
 pub async fn get_thread_post_descriptors(thread_descriptor: &ThreadDescriptor) -> Vec<PostDescriptor> {
-    let pd_to_td_cache_locked = pd_to_td_cache.read().await;
+    let pd_to_td_cache_locked = PD_TO_TD_CACHE.read().await;
 
     let post_descriptor_set = pd_to_td_cache_locked.get(thread_descriptor);
     if post_descriptor_set.is_none() {
@@ -122,7 +136,7 @@ pub async fn get_thread_post_descriptors(thread_descriptor: &ThreadDescriptor) -
 }
 
 pub async fn get_thread_post_db_ids(thread_descriptor: &ThreadDescriptor) -> Vec<i64> {
-    let pd_to_td_cache_locked = pd_to_td_cache.read().await;
+    let pd_to_td_cache_locked = PD_TO_TD_CACHE.read().await;
 
     let post_descriptor_set = pd_to_td_cache_locked.get(thread_descriptor);
     if post_descriptor_set.is_none() {
@@ -134,7 +148,7 @@ pub async fn get_thread_post_db_ids(thread_descriptor: &ThreadDescriptor) -> Vec
         return vec![];
     }
 
-    let pd_to_dbid_cache_locked = pd_to_dbid_cache.read().await;
+    let pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.read().await;
     let mut result_vec = Vec::<i64>::with_capacity(post_descriptor_set.len());
 
     for post_descriptor in post_descriptor_set {
@@ -153,7 +167,7 @@ pub async fn insert_descriptor_db_id(
     transaction: &Transaction<'_>
 ) -> anyhow::Result<i64> {
     {
-        let pd_to_dbid_cache_locked = pd_to_dbid_cache.read().await;
+        let pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.read().await;
 
         let id_generated = pd_to_dbid_cache_locked.get(post_descriptor);
         if id_generated.is_some() {
@@ -185,9 +199,9 @@ pub async fn insert_descriptor_db_id(
         ],
     ).await?.get(0);
 
-    let mut pd_to_dbid_cache_locked = pd_to_dbid_cache.write().await;
-    let mut dbid_to_pd_cache_locked = dbid_to_pd_cache.write().await;
-    let mut pd_to_td_cache_locked = pd_to_td_cache.write().await;
+    let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
+    let mut dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.write().await;
+    let mut pd_to_td_cache_locked = PD_TO_TD_CACHE.write().await;
 
     insert_pd_for_td(&post_descriptor, &mut pd_to_td_cache_locked);
     pd_to_dbid_cache_locked.insert(post_descriptor.clone(), id_generated);
@@ -210,12 +224,11 @@ pub async fn insert_descriptor_db_ids<'a>(
         Vec::<&PostDescriptor>::with_capacity(post_descriptors.len() / 2);
 
     {
-        let pd_to_dbid_cache_locked = pd_to_dbid_cache.read().await;
+        let pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.read().await;
 
         for post_descriptor in post_descriptors {
             let id_generated = pd_to_dbid_cache_locked.get(post_descriptor);
             if id_generated.is_some() {
-                // return Ok(*id_generated.unwrap());
                 result_map.insert(post_descriptor, *id_generated.unwrap());
             } else {
                 post_descriptors_to_insert.push(post_descriptor);
@@ -254,9 +267,9 @@ pub async fn insert_descriptor_db_ids<'a>(
             ],
         ).await?.get(0);
 
-        let mut pd_to_dbid_cache_locked = pd_to_dbid_cache.write().await;
-        let mut dbid_to_pd_cache_locked = dbid_to_pd_cache.write().await;
-        let mut pd_to_td_cache_locked = pd_to_td_cache.write().await;
+        let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
+        let mut dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.write().await;
+        let mut pd_to_td_cache_locked = PD_TO_TD_CACHE.write().await;
 
         insert_pd_for_td(&post_descriptor, &mut pd_to_td_cache_locked);
         pd_to_dbid_cache_locked.insert(post_descriptor.clone(), id_generated);

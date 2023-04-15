@@ -1,19 +1,19 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use tokio_postgres::Row;
 
 use crate::helpers::db_helpers;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
+use crate::model::repository::{account_repository, post_descriptor_id_repository};
 use crate::model::repository::account_repository::AccountId;
-use crate::model::repository::post_descriptor_id_repository;
 use crate::model::repository::post_reply_repository::PostReply;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum StartWatchingPostResult {
     Ok,
     AccountDoesNotExist,
+    AccountIsNotValid,
     PostWatchAlreadyExists
 }
 
@@ -22,27 +22,18 @@ pub async fn start_watching_post(
     account_id: &AccountId,
     post_descriptor: &PostDescriptor
 ) -> anyhow::Result<StartWatchingPostResult> {
-    // TODO: should check separately whether an account exist and whether it's valid so that an error
-    //  can be returned back to client
-    let query = r#"
-        SELECT id_generated
-        FROM accounts
-        WHERE
-            account_id = $1
-        AND
-            valid_until > now()
-"#;
-
-    let mut connection = database.connection().await?;
-    let transaction = connection.transaction().await?;
-    let statement = transaction.prepare(query).await?;
-
-    let owner_account_id: Option<Row> = transaction.query_opt(&statement, &[&account_id.id]).await?;
-    if owner_account_id.is_none() {
+    let account = account_repository::get_account(account_id, database).await?;
+    if account.is_none() {
         return Ok(StartWatchingPostResult::AccountDoesNotExist);
     }
 
-    let owner_account_id: i64 = owner_account_id.unwrap().get(0);
+    let account = account.unwrap();
+    if !account.is_valid() {
+        return Ok(StartWatchingPostResult::AccountIsNotValid);
+    }
+
+    let mut connection = database.connection().await?;
+    let transaction = connection.transaction().await?;
 
     let owner_post_descriptor_id = post_descriptor_id_repository::insert_descriptor_db_id(
         post_descriptor,
@@ -82,7 +73,7 @@ pub async fn start_watching_post(
         query,
         &[
             &owner_post_id,
-            &owner_account_id
+            &account.id_generated
         ]
     ).await?.is_some();
 
@@ -110,7 +101,7 @@ pub async fn get_all_watched_threads(
         FROM
             posts
         WHERE
-            posts.is_dead = FALSE
+            posts.is_dead IS NOT TRUE
         AND
             posts.deleted_on is NULL
 "#;

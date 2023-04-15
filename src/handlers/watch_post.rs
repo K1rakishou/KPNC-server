@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use http_body_util::{BodyExt, Full};
-use hyper::Response;
 use hyper::body::{Bytes, Incoming};
+use hyper::Response;
 use serde::Deserialize;
 
 use crate::handlers::shared::{ContentType, empty_success_response, error_response, error_response_string, validate_post_url};
@@ -15,7 +15,7 @@ use crate::model::repository::site_repository::SiteRepository;
 
 #[derive(Deserialize)]
 struct WatchPostRequest {
-    email: String,
+    user_id: String,
     post_url: String
 }
 
@@ -36,7 +36,7 @@ pub async fn handle(
     let request: WatchPostRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into WatchPostRequest")?;
 
-    let account_id = AccountId::from_email(&request.email)?;
+    let account_id = AccountId::from_user_id(&request.user_id)?;
     let post_url = validate_post_url(&request.post_url)?;
 
     let imageboard = site_repository.by_url(post_url);

@@ -14,7 +14,7 @@ use crate::model::repository::account_repository::{AccountId, FirebaseToken, Upd
 
 #[derive(Deserialize)]
 struct UpdateFirebaseTokenRequest {
-    email: String,
+    user_id: String,
     firebase_token: String
 }
 
@@ -34,7 +34,7 @@ pub async fn handle(
     let request: UpdateFirebaseTokenRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into UpdateFirebaseTokenRequest")?;
 
-    let account_id = AccountId::from_email(&request.email)?;
+    let account_id = AccountId::from_user_id(&request.user_id)?;
     let firebase_token = FirebaseToken::from_str(&request.firebase_token)?;
 
     let result = account_repository::update_firebase_token(database, &account_id, &firebase_token)

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use http_body_util::{BodyExt, Full};
-use hyper::Response;
 use hyper::body::{Bytes, Incoming};
+use hyper::Response;
 use serde::{Deserialize, Serialize};
 
 use crate::handlers::shared::{ContentType, error_response, success_response};
@@ -15,7 +15,7 @@ use crate::model::repository::account_repository::AccountId;
 
 #[derive(Deserialize)]
 struct AccountInfoRequest {
-    email: String
+    user_id: String
 }
 
 #[derive(Serialize)]
@@ -41,9 +41,9 @@ pub async fn handle(
     let request: AccountInfoRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into AccountInfoRequest")?;
 
-    let account_id = AccountId::from_email(&request.email)?;
+    let account_id = AccountId::from_user_id(&request.user_id)?;
 
-    let account = account_repository::get_account(database, &account_id)
+    let account = account_repository::get_account(&account_id, database)
         .await
         .context(format!("Failed to get account from repository with account_id \'{}\'", account_id))?;
 
@@ -67,7 +67,6 @@ pub async fn handle(
     };
 
     let response_json = success_response(account_info_response)?;
-
     let response = Response::builder()
         .json()
         .status(200)

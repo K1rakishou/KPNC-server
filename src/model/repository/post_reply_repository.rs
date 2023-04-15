@@ -78,11 +78,29 @@ pub async fn store(
             &post_reply.owner_post_descriptor_id
         );
 
+        // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
+        debug!(
+            "owner_account_id: {}, owner_post_descriptor_id: {}",
+            post_reply.owner_account_id,
+            post_reply.owner_post_descriptor_id
+        );
+
         if post_descriptors_to_insert.is_none() {
             continue;
         }
 
-        let post_descriptors_to_insert = post_descriptors_to_insert.unwrap()
+        let post_descriptors_to_insert = post_descriptors_to_insert.unwrap();
+
+        for post_descriptor_to_insert in post_descriptors_to_insert {
+            // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
+            debug!(
+                "origin.post_no: {}, reply_to.post_no: {}",
+                post_descriptor_to_insert.origin.post_no,
+                post_descriptor_to_insert.replies_to.post_no
+            );
+        }
+
+        let post_descriptors_to_insert = post_descriptors_to_insert
             .iter()
             .map(|found_post_reply| &found_post_reply.origin)
             .collect::<Vec<&PostDescriptor>>();
@@ -91,6 +109,15 @@ pub async fn store(
             &post_descriptors_to_insert,
             &transaction
         ).await?;
+
+        for (post_descriptor, post_descriptor_db_id) in &pd_to_db_id_map {
+            // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
+            debug!(
+                "post_descriptor.post_no: {}, post_descriptor_db_id: {}",
+                post_descriptor.post_no,
+                post_descriptor_db_id
+            );
+        }
 
         let statement = transaction.prepare(query).await?;
 

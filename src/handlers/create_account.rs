@@ -13,7 +13,8 @@ use crate::model::repository::account_repository;
 
 #[derive(Deserialize)]
 struct CreateNewAccountRequest {
-    email: String
+    user_id: String,
+    valid_for_days: i64
 }
 
 pub async fn handle(
@@ -32,8 +33,22 @@ pub async fn handle(
     let request: CreateNewAccountRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into CreateNewAccountRequest")?;
 
-    let account_id = AccountId::from_email(&request.email)?;
-    let valid_until = chrono::offset::Utc::now() + chrono::Duration::days(180);
+    let account_id = AccountId::from_user_id(&request.user_id)?;
+    let valid_for_days = request.valid_for_days;
+
+    if valid_for_days <= 0 || valid_for_days > 365 {
+        error!("create_account() bad valid_for_days: {}", valid_for_days);
+
+        let response_json = error_response("valid_for_days must be in range 0..1000")?;
+        let response = Response::builder()
+            .json()
+            .status(200)
+            .body(Full::new(Bytes::from(response_json)))?;
+
+        return Ok(response);
+    }
+
+    let valid_until = chrono::offset::Utc::now() + chrono::Duration::days(valid_for_days);
 
     // TODO: only allow creating new accounts for requests with special header
     let result = account_repository::create_account(database, &account_id, Some(&valid_until))
@@ -51,6 +66,7 @@ pub async fn handle(
             account_id,
             error_message
         );
+
         error!("create_account() {}", full_error_message);
 
         let response_json = error_response("Account already exists")?;
