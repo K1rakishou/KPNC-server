@@ -143,7 +143,7 @@ pub async fn mark_all_thread_posts_dead(
     let query = r#"
         UPDATE posts
         SET is_dead = TRUE
-        WHERE posts.id_generated IN
+        WHERE posts.owner_post_descriptor_id IN
 "#;
 
     let query_with_params = db_helpers::format_query_params_string(
@@ -160,6 +160,8 @@ pub async fn mark_all_thread_posts_dead(
     connection.execute(&statement, &query_params[..])
         .await
         .context(format!("Failed to update is_dead flag for thread {}", thread_descriptor))?;
+
+    post_descriptor_id_repository::delete_all_thread_posts(thread_descriptor).await;
 
     return Ok(());
 }

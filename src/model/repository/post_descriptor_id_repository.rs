@@ -21,7 +21,19 @@ lazy_static! {
 pub async fn init(database: &Arc<Database>) -> anyhow::Result<()> {
     info!("init() start");
 
+    // Select all posts that belong to the same threads as active post watches (not dead, not deleted)
     let query = r#"
+        WITH alive_threads AS (
+            SELECT
+                pd.site_name,
+                pd.board_code,
+                pd.thread_no
+            FROM post_descriptors as pd
+            LEFT JOIN posts post ON pd.id_generated = post.owner_post_descriptor_id
+            WHERE post.is_dead = FALSE
+            AND post.deleted_on IS NULL
+        )
+
         SELECT
             pd.id_generated,
             pd.site_name,
@@ -29,12 +41,14 @@ pub async fn init(database: &Arc<Database>) -> anyhow::Result<()> {
             pd.thread_no,
             pd.post_no,
             pd.post_sub_no
-        FROM post_descriptors as pd
-        LEFT JOIN posts post on pd.id_generated = post.owner_post_descriptor_id
+        FROM posts
+        FULL OUTER JOIN post_descriptors pd on pd.id_generated = posts.owner_post_descriptor_id
         WHERE
-            post.is_dead IS NOT TRUE
-          AND
-            post.deleted_on IS NULL
+            pd.site_name IN (SELECT site_name FROM alive_threads)
+        AND
+            pd.board_code IN (SELECT board_code FROM alive_threads)
+        AND
+            pd.thread_no IN (SELECT thread_no FROM alive_threads)
 "#;
 
     let connection = database.connection().await?;
@@ -74,6 +88,38 @@ pub async fn init(database: &Arc<Database>) -> anyhow::Result<()> {
 
     info!("init() end, loaded_post_descriptors: {}", loaded_post_descriptors);
     return Ok(());
+}
+
+pub async fn delete_all_thread_posts(thread_descriptor: &ThreadDescriptor) {
+    let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
+    let mut dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.write().await;
+    let mut pd_to_td_cache_locked = PD_TO_TD_CACHE.write().await;
+
+    let thread_posts = pd_to_td_cache_locked.remove(thread_descriptor);
+    if thread_posts.is_none() {
+        return;
+    }
+
+    let thread_posts = thread_posts.unwrap();
+    if thread_posts.is_empty() {
+        return;
+    }
+
+    for thread_post in &thread_posts {
+        pd_to_dbid_cache_locked.remove(thread_post);
+    }
+
+    let mut to_remove = Vec::<i64>::with_capacity(thread_posts.len());
+
+    for (db_id, post_descriptor) in dbid_to_pd_cache_locked.iter() {
+        if thread_posts.contains(post_descriptor) {
+            to_remove.push(*db_id);
+        }
+    }
+
+    for db_id in to_remove {
+        dbid_to_pd_cache_locked.remove(&db_id);
+    }
 }
 
 pub async fn get_post_descriptor_db_id(post_descriptor: &PostDescriptor) -> i64 {

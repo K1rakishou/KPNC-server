@@ -231,6 +231,22 @@ async fn process_thread(
     let head_request = HTTP_CLIENT.head(thread_json_endpoint.clone()).build()?;
     let head_response = HTTP_CLIENT.execute(head_request).await?;
 
+    let head_request_status_code = head_response.status().as_u16();
+    if head_request_status_code != 200 {
+        error!("process_thread({}) (HEAD) bad status code {}", thread_descriptor, head_request_status_code);
+
+        if head_request_status_code == 404 {
+            error!(
+                "process_thread({}) (HEAD) marking thread as dead because status code is 404",
+                thread_descriptor
+            );
+
+            post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+        }
+
+        return Ok(());
+    }
+
     let last_modified_str = head_response.headers()
         .get("Last-Modified")
         .map(|header_value| header_value.to_str().unwrap_or(""))
