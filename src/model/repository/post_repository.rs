@@ -22,10 +22,8 @@ pub async fn start_watching_post(
     account_id: &AccountId,
     post_descriptor: &PostDescriptor
 ) -> anyhow::Result<StartWatchingPostResult> {
-    let mut connection = database.connection().await?;
-    let transaction = connection.transaction().await?;
-
-    // TODO: should check separately whether an account exist and whether it's valid
+    // TODO: should check separately whether an account exist and whether it's valid so that an error
+    //  can be returned back to client
     let query = r#"
         SELECT id_generated
         FROM accounts
@@ -35,11 +33,11 @@ pub async fn start_watching_post(
             valid_until > now()
 "#;
 
-    let owner_account_id: Option<Row> = transaction.query_opt(
-        query,
-        &[&account_id.id]
-    ).await?;
+    let mut connection = database.connection().await?;
+    let transaction = connection.transaction().await?;
+    let statement = transaction.prepare(query).await?;
 
+    let owner_account_id: Option<Row> = transaction.query_opt(&statement, &[&account_id.id]).await?;
     if owner_account_id.is_none() {
         return Ok(StartWatchingPostResult::AccountDoesNotExist);
     }
@@ -147,8 +145,6 @@ pub async fn mark_all_thread_posts_dead(
     database: &Arc<Database>,
     thread_descriptor: &ThreadDescriptor
 ) -> anyhow::Result<()> {
-    let connection = database.connection().await?;
-
     let thread_post_db_ids = post_descriptor_id_repository::get_thread_post_db_ids(
         thread_descriptor
     ).await;
@@ -167,10 +163,10 @@ pub async fn mark_all_thread_posts_dead(
 
     let query_params = db_helpers::to_db_params::<i64>(&thread_post_db_ids);
 
-    connection.execute(
-        query_with_params.as_str(),
-        &query_params[..]
-    )
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query_with_params.as_str()).await?;
+
+    connection.execute(&statement, &query_params[..])
         .await
         .context(format!("Failed to update is_dead flag for thread {}", thread_descriptor))?;
 

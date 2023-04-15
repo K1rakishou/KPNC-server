@@ -21,11 +21,11 @@ lazy_static! {
 pub async fn init(database: &Arc<Database>) -> anyhow::Result<()> {
     info!("init() start");
 
+    let mut loaded_post_descriptors = 0;
+
+    let query = "SELECT * FROM post_descriptors";
     let connection = database.connection().await?;
-    let rows = connection.query(
-        "SELECT * FROM post_descriptors",
-        &[]
-    ).await?;
+    let rows = connection.query(query, &[]).await?;
 
     info!("init() found {} rows", rows.len());
 
@@ -53,11 +53,12 @@ pub async fn init(database: &Arc<Database>) -> anyhow::Result<()> {
             insert_pd_for_td(&post_descriptor, &mut pd_to_td_cache_locked);
             pd_to_dbid_cache_locked.insert(post_descriptor.clone(), id_generated);
             dbid_to_pd_cache_locked.insert(id_generated, post_descriptor);
+
+            loaded_post_descriptors += 1;
         }
     }
 
-    info!("init() end");
-
+    info!("init() end, loaded_post_descriptors: {}", loaded_post_descriptors);
     return Ok(());
 }
 

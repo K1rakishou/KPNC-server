@@ -185,8 +185,6 @@ pub async fn get_account(
         return Ok(Some(from_cache.unwrap()));
     }
 
-    let connection = database.connection().await?;
-
     let query = r#"
         SELECT
             accounts.account_id,
@@ -196,6 +194,7 @@ pub async fn get_account(
         WHERE accounts.account_id = $1
 "#;
 
+    let connection = database.connection().await?;
     let statement = connection.prepare(query).await?;
 
     let row = connection.query_opt(&statement, &[&account_id.id]).await?;
@@ -229,11 +228,17 @@ pub async fn create_account(
         return Ok(CreateAccountResult::AccountAlreadyExists);
     }
 
-    let connection = database.connection().await?;
+    let query = r#"
+        INSERT INTO accounts
+        (
+            account_id,
+            valid_until
+        )
+        VALUES ($1, $2)
+"#;
 
-    let statement = connection
-        .prepare("INSERT INTO accounts(account_id, valid_until) VALUES ($1, $2)")
-        .await?;
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query).await?;
 
     connection.execute(
         &statement,
@@ -270,11 +275,16 @@ pub async fn update_firebase_token(
         return Ok(UpdateFirebaseTokenResult::AccountDoesNotExist);
     }
 
-    let connection = database.connection().await?;
+    let query = r#"
+        UPDATE accounts
+        SET
+            firebase_token = $1
+        WHERE
+            account_id = $2
+"#;
 
-    let statement = connection
-        .prepare("UPDATE accounts SET firebase_token = $1 WHERE account_id = $2")
-        .await?;
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query).await?;
 
     connection.execute(
         &statement,

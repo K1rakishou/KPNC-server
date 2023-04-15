@@ -112,46 +112,46 @@ pub async fn get_unsent_replies(
     is_dev_build: bool,
     database: &Arc<Database>
 ) -> anyhow::Result<HashMap<String, HashSet<UnsentReply>>> {
-    let connection = database.connection().await?;
-
     let query = r#"
+        SELECT
+            unsent_post_reply.id_generated,
+            unsent_post_reply.firebase_token,
+            unsent_post_reply.site_name,
+            unsent_post_reply.board_code,
+            unsent_post_reply.thread_no,
+            unsent_post_reply.post_no,
+            unsent_post_reply.post_sub_no
+        FROM
+        (
             SELECT
-                unsent_post_reply.id_generated,
-                unsent_post_reply.firebase_token,
-                unsent_post_reply.site_name,
-                unsent_post_reply.board_code,
-                unsent_post_reply.thread_no,
-                unsent_post_reply.post_no,
-                unsent_post_reply.post_sub_no
-            FROM
-            (
-                SELECT
-                    post_replies.id_generated,
-                    account.firebase_token,
-                    post_descriptor.site_name,
-                    post_descriptor.board_code,
-                    post_descriptor.thread_no,
-                    post_descriptor.post_no,
-                    post_descriptor.post_sub_no
-                FROM post_replies
-                LEFT JOIN accounts account
-                    ON account.id_generated = post_replies.owner_account_id
-                LEFT JOIN post_descriptors post_descriptor
-                    ON post_replies.owner_post_descriptor_id = post_descriptor.id_generated
-                WHERE
-                    post_replies.deleted_on IS NULL
-                AND
-                    post_replies.notification_sent_on IS NULL
-                AND
-                    account.firebase_token IS NOT NULL
-                AND
-                    account.valid_until > now()
-                AND
-                    account.deleted_on IS NULL
-            ) AS unsent_post_reply
+                post_replies.id_generated,
+                account.firebase_token,
+                post_descriptor.site_name,
+                post_descriptor.board_code,
+                post_descriptor.thread_no,
+                post_descriptor.post_no,
+                post_descriptor.post_sub_no
+            FROM post_replies
+            LEFT JOIN accounts account
+                ON account.id_generated = post_replies.owner_account_id
+            LEFT JOIN post_descriptors post_descriptor
+                ON post_replies.owner_post_descriptor_id = post_descriptor.id_generated
+            WHERE
+                post_replies.deleted_on IS NULL
+            AND
+                post_replies.notification_sent_on IS NULL
+            AND
+                account.firebase_token IS NOT NULL
+            AND
+                account.valid_until > now()
+            AND
+                account.deleted_on IS NULL
+        ) AS unsent_post_reply
 "#;
 
+    let connection = database.connection().await?;
     let rows = connection.query(query, &[]).await?;
+
     if rows.is_empty() {
         info!("No unsent replies found");
         return Ok(HashMap::new());

@@ -9,8 +9,6 @@ pub async fn get_last_processed_post(
     thread_descriptor: &ThreadDescriptor,
     database: &Arc<Database>
 ) -> anyhow::Result<Option<PostDescriptor>> {
-    let connection = database.connection().await?;
-
     let query = r#"
         SELECT last_processed_post_no,
                last_processed_post_sub_no
@@ -22,6 +20,7 @@ pub async fn get_last_processed_post(
           AND threads.last_processed_post_sub_no IS NOT NULL
 "#;
 
+    let connection = database.connection().await?;
     let statement = connection.prepare(query).await?;
 
     let row_maybe = connection.query_opt(
