@@ -12,6 +12,7 @@ use hyper::service::service_fn;
 use log::LevelFilter;
 use tokio::net::TcpListener;
 
+use crate::helpers::throttler;
 use crate::model::database::db::Database;
 use crate::model::repository::migrations_repository::perform_migrations;
 use crate::model::repository::post_descriptor_id_repository;
@@ -85,6 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             &site_repository_for_watcher,
             &fcm_sender
         ).await.unwrap();
+    });
+
+    tokio::task::spawn(async move {
+        throttler::cleanup_task().await;
     });
 
     info!("main() starting up server... done, waiting for connections...");

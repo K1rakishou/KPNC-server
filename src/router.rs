@@ -7,6 +7,7 @@ use hyper::body::Bytes;
 
 use crate::handlers;
 use crate::handlers::shared::ContentType;
+use crate::helpers::throttler;
 use crate::model::database::db::Database;
 use crate::model::repository::site_repository::SiteRepository;
 
@@ -21,7 +22,16 @@ pub async fn router(
 
     let path_and_query = parts.uri.path_and_query();
     if path_and_query.is_none() {
-        return Ok(Response::new(Full::new(Bytes::from("path_and_query not found"))))
+        error!("router() path_and_query not found");
+
+        let error_message = "path_and_query not found";
+        let response_json = handlers::shared::error_response(error_message)?;
+        let response = Response::builder()
+            .json()
+            .status(200)
+            .body(Full::new(Bytes::from(response_json)))?;
+
+        return Ok(response);
     }
 
     let path_and_query = path_and_query.unwrap();
@@ -30,11 +40,26 @@ pub async fn router(
         path = &path[1..];
     }
 
-    let start = chrono::offset::Utc::now();
+    info!("router() New request to \'{}\' from \'{}\'", path, remote_address);
 
-    info!("New request to \'{}\' from \'{}\'", path, remote_address);
+    let can_proceed = throttler::can_proceed(path.to_string(), &remote_address).await?;
+    if !can_proceed {
+        info!("router() Client {} has been throttled", remote_address);
+
+        let error_message = "You are making too many requests, please wait a little bit.";
+        let response_json = handlers::shared::error_response(error_message)?;
+        let response = Response::builder()
+            .json()
+            .status(200)
+            .body(Full::new(Bytes::from(response_json)))?;
+
+        return Ok(response);
+    }
+
+    let start = chrono::offset::Utc::now();
     let query = path_and_query.query().unwrap_or("");
 
+    // Do not forget to update throttler as well when changing paths here.
     let handler_result = match path {
         "create_account" => handlers::create_account::handle(query, body, database).await,
         "update_firebase_token" => handlers::update_firebase_token::handle(query, body, database).await,
@@ -54,7 +79,7 @@ pub async fn router(
             .map(|err| err.to_string())
             .unwrap_or(String::from("Unknown error"));
 
-        log::error!("Request to {} error: {:?}", path, handler_error);
+        log::error!("router() Request to {} error: {:?}", path, handler_error);
 
         let response_json = handlers::shared::error_response_string(&handler_error_message)?;
         let response = Response::builder()
@@ -65,7 +90,7 @@ pub async fn router(
         return Ok(response);
     } else {
         info!(
-            "Request to \'{}\' from \'{}\' success, took {} ms",
+            "router() Request to \'{}\' from \'{}\' success, took {} ms",
             path,
             remote_address,
             delta.num_milliseconds()
