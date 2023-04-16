@@ -7,7 +7,7 @@ use hyper::body::{Bytes, Incoming};
 use hyper::Response;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::shared::{ContentType, error_response, success_response};
+use crate::handlers::shared::{ContentType, error_response, ServerSuccessResponse, success_response};
 use crate::helpers::serde_helpers::serialize_datetime;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
@@ -23,6 +23,10 @@ struct AccountInfoResponse {
     is_valid: bool,
     #[serde(serialize_with = "serialize_datetime")]
     valid_until: Option<DateTime<Utc>>
+}
+
+impl ServerSuccessResponse for AccountInfoResponse {
+    
 }
 
 pub async fn handle(

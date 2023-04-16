@@ -76,6 +76,11 @@ impl AccountId {
         let account_id = AccountId { id: user_id.sha3_512(constants::USER_ID_HASH_ITERATIONS) };
         return Ok(account_id);
     }
+
+    pub fn test_unsafe(user_id: &str) -> anyhow::Result<AccountId> {
+        let account_id = AccountId { id: user_id.sha3_512(constants::USER_ID_HASH_ITERATIONS) };
+        return Ok(account_id);
+    }
 }
 
 impl Display for AccountId {
@@ -325,3 +330,42 @@ pub async fn update_firebase_token(
 
     return Ok(UpdateFirebaseTokenResult::Ok);
 }
+
+pub async fn test_get_account_from_cache(
+    account_id: &AccountId,
+) -> Option<Account> {
+    return ACCOUNTS_CACHE.read()
+        .await
+        .get(account_id)
+        .cloned()
+}
+
+pub async fn test_get_account_from_database(
+    account_id: &AccountId,
+    database: &Arc<Database>
+) -> anyhow::Result<Option<Account>> {
+    let query = r#"
+        SELECT
+            accounts.id_generated,
+            accounts.account_id,
+            accounts.firebase_token,
+            accounts.valid_until
+        FROM accounts
+        WHERE
+            accounts.account_id = $1
+        AND
+            accounts.deleted_on IS NULL
+"#;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query).await?;
+
+    let row = connection.query_opt(&statement, &[&account_id.id]).await?;
+    if row.is_none() {
+        return Ok(None);
+    }
+
+    let account = Account::from_row(&row.unwrap()).unwrap();
+    return Ok(Some(account));
+}
+

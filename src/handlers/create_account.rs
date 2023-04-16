@@ -4,17 +4,17 @@ use anyhow::Context;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};
 use hyper::Response;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::handlers::shared::{ContentType, empty_success_response, error_response};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::{AccountId, CreateAccountResult};
 use crate::model::repository::account_repository;
 
-#[derive(Deserialize)]
-struct CreateNewAccountRequest {
-    user_id: String,
-    valid_for_days: u64
+#[derive(Serialize, Deserialize)]
+pub struct CreateNewAccountRequest {
+    pub user_id: String,
+    pub valid_for_days: u64
 }
 
 pub async fn handle(

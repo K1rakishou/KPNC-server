@@ -1,3 +1,6 @@
+#![feature(once_cell)]
+#![feature(async_closure)]
+
 #[macro_use]
 extern crate log;
 
@@ -27,6 +30,9 @@ mod service;
 mod router;
 mod handlers;
 mod helpers;
+
+#[cfg(test)]
+mod tests;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -118,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-fn init_logger(is_dev_build: bool) {
+pub fn init_logger(is_dev_build: bool) {
     let level_filter = if is_dev_build {
         LevelFilter::Debug
     } else {

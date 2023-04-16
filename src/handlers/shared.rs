@@ -1,21 +1,34 @@
 use anyhow::anyhow;
 use hyper::http::response::Builder;
 use serde::{Deserialize, Serialize};
+
 use crate::constants;
 
+pub trait ServerSuccessResponse {
+
+}
+
 #[derive(Serialize, Deserialize)]
-pub struct ServerResponse<T> {
-    data: Option<T>,
-    error: Option<String>
+pub struct ServerResponse<T : ServerSuccessResponse> {
+    pub data: Option<T>,
+    pub error: Option<String>
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct DefaultSuccessResponse {
-    success: bool
+    pub success: bool
+}
+
+impl ServerSuccessResponse for DefaultSuccessResponse {
+
 }
 
 #[derive(Serialize, Deserialize)]
-struct EmptyField {
+pub struct EmptyResponse {
+
+}
+
+impl ServerSuccessResponse for EmptyResponse {
 
 }
 
@@ -29,7 +42,7 @@ pub fn empty_success_response() -> anyhow::Result<String> {
     return Ok(json);
 }
 
-pub fn success_response<'a, T>(
+pub fn success_response<'a, T : ServerSuccessResponse>(
     data: T
 ) -> anyhow::Result<String>
     where T : Serialize
@@ -48,7 +61,7 @@ pub fn error_response_string(error: &String) -> anyhow::Result<String> {
 }
 
 pub fn error_response(error: &str) -> anyhow::Result<String> {
-    let response: ServerResponse<EmptyField> = ServerResponse {
+    let response: ServerResponse<EmptyResponse> = ServerResponse {
         data: None,
         error: Some(error.to_string())
     };
