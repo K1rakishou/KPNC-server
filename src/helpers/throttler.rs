@@ -88,7 +88,7 @@ fn init_request_limits() -> HashMap<String, usize> {
     return result_map;
 }
 
-fn extract_ip_address<'a>(remote_address: &String) -> String {
+fn extract_ip_address(remote_address: &String) -> String {
     let index = remote_address.find(":");
     if index.is_none() {
         return remote_address.to_string()

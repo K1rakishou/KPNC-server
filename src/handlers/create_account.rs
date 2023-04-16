@@ -14,7 +14,7 @@ use crate::model::repository::account_repository;
 #[derive(Deserialize)]
 struct CreateNewAccountRequest {
     user_id: String,
-    valid_for_days: i64
+    valid_for_days: u64
 }
 
 pub async fn handle(
@@ -34,12 +34,12 @@ pub async fn handle(
         .context("Failed to convert body into CreateNewAccountRequest")?;
 
     let account_id = AccountId::from_user_id(&request.user_id)?;
-    let valid_for_days = request.valid_for_days;
+    let valid_for_days = request.valid_for_days as i64;
 
     if valid_for_days <= 0 || valid_for_days > 365 {
         error!("create_account() bad valid_for_days: {}", valid_for_days);
 
-        let response_json = error_response("valid_for_days must be in range 0..1000")?;
+        let response_json = error_response("valid_for_days must be in range 0..365")?;
         let response = Response::builder()
             .json()
             .status(200)
@@ -50,7 +50,7 @@ pub async fn handle(
 
     let valid_until = chrono::offset::Utc::now() + chrono::Duration::days(valid_for_days);
 
-    // TODO: only allow creating new accounts for requests with special header
+    // TODO: only allow creating new accounts for requests with a special header
     let result = account_repository::create_account(database, &account_id, Some(&valid_until))
         .await
         .context(format!("Failed to created account for account with account_id: \'{}\'", account_id))?;

@@ -109,6 +109,9 @@ impl FcmSender {
             result_vec
         };
 
+        // TODO: Maybe I should send a notification from a client back to the server when a message
+        //  was successfully received and only then mark it as notified onl after that?
+        //  In case we fail to deliver the message for whatever reason.
         if sent_post_reply_ids.len() > 0 {
             post_reply_repository::mark_post_replies_as_notified(sent_post_reply_ids, &self.database)
                 .await
