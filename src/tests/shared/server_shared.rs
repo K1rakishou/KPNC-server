@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 
 use crate::model::database::db::Database;
 use crate::model::repository::site_repository::SiteRepository;
-use crate::router::router;
+use crate::router::{router, TestContext};
 
 static SERVER_WORKING_FLAG: AtomicBool = AtomicBool::new(false);
 
@@ -45,7 +45,11 @@ pub async fn ctor(
                     .serve_connection(
                         stream,
                         service_fn(|request| {
+                            let test_context = TestContext { enable_throttler: false };
+                            let test_context = Some(test_context);
+
                             return router(
+                                test_context,
                                 &sock_addr,
                                 request,
                                 &database_cloned_for_router,

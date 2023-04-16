@@ -20,7 +20,7 @@ use crate::model::database::db::Database;
 use crate::model::repository::migrations_repository::perform_migrations;
 use crate::model::repository::post_descriptor_id_repository;
 use crate::model::repository::site_repository::SiteRepository;
-use crate::router::router;
+use crate::router::{router, TestContext};
 use crate::service::fcm_sender::FcmSender;
 use crate::service::thread_watcher::ThreadWatcher;
 
@@ -110,7 +110,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .serve_connection(
                     stream,
                     service_fn(|request| {
+                        let test_context: Option<TestContext> = None;
+
                         return router(
+                            test_context,
                             &sock_addr,
                             request,
                             &database_cloned_for_router,

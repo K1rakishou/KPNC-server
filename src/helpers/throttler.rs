@@ -5,6 +5,8 @@ use std::time::Duration;
 use lazy_static::lazy_static;
 use tokio::sync::RwLock;
 
+use crate::router::TestContext;
+
 lazy_static! {
     static ref VISITORS: RwLock<lru::LruCache<String, VisitorInfo>> =
         RwLock::new(lru::LruCache::new(NonZeroUsize::new(4096).unwrap()));
@@ -47,7 +49,15 @@ pub async fn cleanup_task() {
     info!("cleanup_task() end");
 }
 
-pub async fn can_proceed(path: String, remote_address: &String) -> anyhow::Result<bool> {
+pub async fn can_proceed(
+    test_context: Option<TestContext>,
+    path: String,
+    remote_address: &String
+) -> anyhow::Result<bool> {
+    if test_context.is_some() && !test_context.unwrap().enable_throttler {
+        return Ok(true);
+    }
+
     let ip_address = extract_ip_address(remote_address);
 
     let counter = {

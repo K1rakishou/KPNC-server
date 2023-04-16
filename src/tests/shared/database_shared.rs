@@ -46,6 +46,13 @@ pub async fn cleanup() {
         DELETE FROM public.accounts;
         DELETE FROM public.post_descriptors;
         DELETE FROM public.threads;
+
+        ALTER SEQUENCE accounts_id_generated_seq RESTART;
+        ALTER SEQUENCE post_descriptors_id_generated_seq RESTART;
+        ALTER SEQUENCE post_replies_id_generated_seq RESTART;
+        ALTER SEQUENCE post_watches_id_generated_seq RESTART;
+        ALTER SEQUENCE posts_id_generated_seq RESTART;
+        ALTER SEQUENCE threads_id_generated_seq RESTART;
     "#;
 
     connection.batch_execute(query).await.unwrap();

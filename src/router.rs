@@ -11,7 +11,12 @@ use crate::helpers::throttler;
 use crate::model::database::db::Database;
 use crate::model::repository::site_repository::SiteRepository;
 
+pub struct TestContext {
+    pub enable_throttler: bool
+}
+
 pub async fn router(
+    test_context: Option<TestContext>,
     sock_addr: &SocketAddr,
     request: Request<hyper::body::Incoming>,
     database: &Arc<Database>,
@@ -42,7 +47,7 @@ pub async fn router(
 
     info!("router() New request to \'{}\' from \'{}\'", path, remote_address);
 
-    let can_proceed = throttler::can_proceed(path.to_string(), &remote_address).await?;
+    let can_proceed = throttler::can_proceed(test_context, path.to_string(), &remote_address).await?;
     if !can_proceed {
         info!("router() Client {} has been throttled", remote_address);
 

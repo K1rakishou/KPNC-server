@@ -20,8 +20,8 @@ lazy_static! {
 #[derive(Clone)]
 pub struct Account {
     pub id_generated: i64,
-    account_id: AccountId,
-    firebase_token: Option<FirebaseToken>,
+    pub account_id: AccountId,
+    pub firebase_token: Option<FirebaseToken>,
     pub valid_until: Option<DateTime<Utc>>
 }
 
@@ -369,3 +369,26 @@ pub async fn test_get_account_from_database(
     return Ok(Some(account));
 }
 
+pub async fn test_count_accounts_in_database(database: &Arc<Database>) -> anyhow::Result<i64> {
+    let query = r#"
+        SELECT COUNT(accounts.id_generated)
+        FROM accounts
+"#;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query).await?;
+
+    let accounts_count: i64 = connection.query_opt(&statement, &[]).await?.unwrap().get(0);
+    return Ok(accounts_count);
+}
+
+pub async fn test_count_accounts_in_cache() -> usize {
+    return ACCOUNTS_CACHE.read()
+        .await
+        .len();
+}
+
+pub async fn test_cleanup() {
+    let mut accounts_cache_locked = ACCOUNTS_CACHE.write().await;
+    accounts_cache_locked.clear();
+}

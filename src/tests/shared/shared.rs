@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::init_logger;
-use crate::model::repository::migrations_repository;
+use crate::model::repository::{account_repository, migrations_repository};
 use crate::tests::shared::{database_shared, server_shared, site_repository_shared};
 
 pub struct TestCase {
@@ -20,6 +20,7 @@ pub async fn run_test(tests: Vec<TestCase>) {
         info!("[{}/{}] Running \'{}\'...", (index + 1), tests_count, test.name);
 
         database_shared::cleanup().await;
+        account_repository::test_cleanup().await;
         (test.function)().await;
 
         info!("[{}/{}] Running \'{}\'...OK", (index + 1), tests_count, test.name);
@@ -30,6 +31,10 @@ pub async fn run_test(tests: Vec<TestCase>) {
 
 pub fn assert_none<T>(option: &Option<T>) {
     assert!(option.is_none());
+}
+
+pub fn assert_some<T>(option: &Option<T>) {
+    assert!(option.is_some());
 }
 
 async fn test_ctor() {
