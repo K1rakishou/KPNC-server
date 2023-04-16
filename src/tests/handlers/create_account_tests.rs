@@ -1,22 +1,22 @@
 #[cfg(test)]
 mod tests {
     use crate::handlers::shared::EmptyResponse;
-    use crate::make_test;
     use crate::model::repository::account_repository;
     use crate::model::repository::account_repository::AccountId;
+    use crate::test_case;
     use crate::tests::shared::{account_repository_shared, database_shared};
-    use crate::tests::shared::shared::{assert_none, assert_some, run_test, TestCase};
+    use crate::tests::shared::shared::{run_test, TestCase};
 
     #[tokio::test]
     async fn run_tests() {
         let tests: Vec<TestCase> = vec![
-            make_test!(should_not_create_account_when_user_id_is_too_short),
-            make_test!(should_not_create_account_when_user_id_is_too_long),
-            make_test!(should_not_create_account_when_valid_for_days_is_zero),
-            make_test!(should_not_create_account_when_valid_for_days_is_too_big),
-            make_test!(should_not_create_account_with_the_same_id_more_than_once),
-            make_test!(should_create_account_when_parameters_are_good),
-            make_test!(should_create_multiple_accounts_when_parameters_are_good),
+            test_case!(should_not_create_account_when_user_id_is_too_short),
+            test_case!(should_not_create_account_when_user_id_is_too_long),
+            test_case!(should_not_create_account_when_valid_for_days_is_zero),
+            test_case!(should_not_create_account_when_valid_for_days_is_too_big),
+            test_case!(should_not_create_account_with_the_same_id_more_than_once),
+            test_case!(should_create_account_when_parameters_are_good),
+            test_case!(should_create_multiple_accounts_when_parameters_are_good),
         ];
 
         run_test(tests).await;
@@ -38,12 +38,12 @@ mod tests {
         let from_cache = account_repository_shared::get_account_from_cache(user_id)
             .await
             .unwrap();
-        assert_none(&from_cache);
+        assert!(&from_cache.is_none());
 
         let from_database = account_repository_shared::get_account_from_database(user_id, database)
             .await
             .unwrap();
-        assert_none(&from_database);
+        assert!(&from_database.is_none());
     }
 
     async fn should_not_create_account_when_user_id_is_too_long() {
@@ -62,12 +62,12 @@ mod tests {
         let from_cache = account_repository_shared::get_account_from_cache(user_id)
             .await
             .unwrap();
-        assert_none(&from_cache);
+        assert!(&from_cache.is_none());
 
         let from_database = account_repository_shared::get_account_from_database(user_id, database)
             .await
             .unwrap();
-        assert_none(&from_database);
+        assert!(&from_database.is_none());
     }
 
     async fn should_not_create_account_when_valid_for_days_is_zero() {
@@ -86,12 +86,12 @@ mod tests {
         let from_cache = account_repository_shared::get_account_from_cache(user_id)
             .await
             .unwrap();
-        assert_none(&from_cache);
+        assert!(&from_cache.is_none());
 
         let from_database = account_repository_shared::get_account_from_database(user_id, database)
             .await
             .unwrap();
-        assert_none(&from_database);
+        assert!(&from_database.is_none());
     }
 
     async fn should_not_create_account_when_valid_for_days_is_too_big() {
@@ -110,12 +110,12 @@ mod tests {
         let from_cache = account_repository_shared::get_account_from_cache(user_id)
             .await
             .unwrap();
-        assert_none(&from_cache);
+        assert!(&from_cache.is_none());
 
         let from_database = account_repository_shared::get_account_from_database(user_id, database)
             .await
             .unwrap();
-        assert_none(&from_database);
+        assert!(&from_database.is_none());
     }
 
     async fn should_not_create_account_with_the_same_id_more_than_once() {
@@ -169,8 +169,8 @@ mod tests {
 
         assert_eq!(1, from_cache.id_generated);
         assert_eq!(account_id.id, from_cache.account_id.id);
-        assert_none(&from_cache.firebase_token());
-        assert_some(&from_cache.valid_until);
+        assert!(&from_cache.firebase_token().is_none());
+        assert!(&from_cache.valid_until.is_some());
 
         let from_database = account_repository_shared::get_account_from_database(user_id, database)
             .await
@@ -179,8 +179,8 @@ mod tests {
 
         assert_eq!(1, from_database.id_generated);
         assert_eq!(account_id.id, from_database.account_id.id);
-        assert_none(&from_database.firebase_token());
-        assert_some(&from_database.valid_until);
+        assert!(&from_database.firebase_token().is_none());
+        assert!(&from_database.valid_until.is_some());
     }
 
     async fn should_create_multiple_accounts_when_parameters_are_good() {
@@ -206,8 +206,8 @@ mod tests {
 
             assert_eq!(1, from_cache.id_generated);
             assert_eq!(account_id1.id, from_cache.account_id.id);
-            assert_none(&from_cache.firebase_token());
-            assert_some(&from_cache.valid_until);
+            assert!(&from_cache.firebase_token().is_none());
+            assert!(&from_cache.valid_until.is_some());
 
             let from_database = account_repository_shared::get_account_from_database(user_id1, database)
                 .await
@@ -216,8 +216,8 @@ mod tests {
 
             assert_eq!(1, from_database.id_generated);
             assert_eq!(account_id1.id, from_database.account_id.id);
-            assert_none(&from_database.firebase_token());
-            assert_some(&from_database.valid_until);
+            assert!(&from_database.firebase_token().is_none());
+            assert!(&from_database.valid_until.is_some());
         }
 
         {
@@ -236,8 +236,8 @@ mod tests {
 
             assert_eq!(2, from_cache.id_generated);
             assert_eq!(account_id2.id, from_cache.account_id.id);
-            assert_none(&from_cache.firebase_token());
-            assert_some(&from_cache.valid_until);
+            assert!(&from_cache.firebase_token().is_none());
+            assert!(&from_cache.valid_until.is_some());
 
             let from_database = account_repository_shared::get_account_from_database(user_id2, database)
                 .await
@@ -246,8 +246,8 @@ mod tests {
 
             assert_eq!(2, from_database.id_generated);
             assert_eq!(account_id2.id, from_database.account_id.id);
-            assert_none(&from_database.firebase_token());
-            assert_some(&from_database.valid_until);
+            assert!(&from_database.firebase_token().is_none());
+            assert!(&from_database.valid_until.is_some());
         }
     }
 

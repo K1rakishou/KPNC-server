@@ -29,14 +29,6 @@ pub async fn run_test(tests: Vec<TestCase>) {
     test_dtor().await;
 }
 
-pub fn assert_none<T>(option: &Option<T>) {
-    assert!(option.is_none());
-}
-
-pub fn assert_some<T>(option: &Option<T>) {
-    assert!(option.is_some());
-}
-
 async fn test_ctor() {
     init_logger(false);
     info!("test_ctor start");
@@ -64,7 +56,7 @@ async fn test_dtor() {
 }
 
 #[macro_export]
-macro_rules! make_test {
+macro_rules! test_case {
     ($func:expr) => {
         TestCase {
             name: String::from(stringify!($func)),
