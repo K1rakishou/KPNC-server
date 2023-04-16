@@ -1,20 +1,25 @@
 #[cfg(test)]
 mod tests {
     use crate::handlers::shared::EmptyResponse;
+    use crate::make_test;
     use crate::tests::shared::{account_repository_shared, database_shared};
-    use crate::tests::shared::shared::{assert_none, run_test};
+    use crate::tests::shared::shared::{assert_none, run_test, TestCase};
 
     #[tokio::test]
     async fn run_tests() {
-        run_test(async || {
-            should_not_create_account_when_user_id_is_too_short().await;
-            should_not_create_account_when_user_id_is_too_long().await;
-        }).await;
+        let tests: Vec<TestCase> = vec![
+            make_test!(should_not_create_account_when_user_id_is_too_short),
+            make_test!(should_not_create_account_when_user_id_is_too_long),
+        ];
+
+        run_test(tests).await;
     }
 
     async fn should_not_create_account_when_user_id_is_too_short() {
         let user_id = &account_repository_shared::TEST_BAD_USER_ID1;
+
         let database = database_shared::database();
+        database_shared::cleanup().await;
 
         let server_response = account_repository_shared::create_account::<EmptyResponse>(
             user_id,
@@ -38,7 +43,9 @@ mod tests {
 
     async fn should_not_create_account_when_user_id_is_too_long() {
         let user_id = &account_repository_shared::TEST_BAD_USER_ID2;
+
         let database = database_shared::database();
+        database_shared::cleanup().await;
 
         let server_response = account_repository_shared::create_account::<EmptyResponse>(
             user_id,

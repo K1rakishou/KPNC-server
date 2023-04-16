@@ -1,14 +1,30 @@
 use std::future::Future;
+use std::pin::Pin;
 
 use crate::init_logger;
 use crate::model::repository::migrations_repository;
 use crate::tests::shared::{database_shared, server_shared, site_repository_shared};
 
-pub async fn run_test<Fut>(tests: impl FnOnce() -> Fut) -> ()
-    where Fut: Future<Output = ()>,
-{
+pub struct TestCase {
+    pub name: String,
+    pub function: Box<dyn Fn() -> PinFutureObj<()>>
+}
+
+pub type PinFutureObj<Output> = Pin<Box<dyn Future<Output = Output>>>;
+
+pub async fn run_test(tests: Vec<TestCase>) {
     test_ctor().await;
-    tests().await;
+    let tests_count = tests.len();
+
+    for (index, test) in tests.iter().enumerate() {
+        info!("[{}/{}] Running \'{}\'...", (index + 1), tests_count, test.name);
+
+        database_shared::cleanup().await;
+        (test.function)().await;
+
+        info!("[{}/{}] Running \'{}\'...OK", (index + 1), tests_count, test.name);
+    }
+
     test_dtor().await;
 }
 
@@ -40,4 +56,14 @@ async fn test_dtor() {
     database_shared::dtor().await;
 
     info!("test_dtor end");
+}
+
+#[macro_export]
+macro_rules! make_test {
+    ($func:expr) => {
+        TestCase {
+            name: String::from(stringify!($func)),
+            function: Box::new(|| Box::pin($func()))
+        }
+    };
 }

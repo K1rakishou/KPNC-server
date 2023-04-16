@@ -34,6 +34,23 @@ pub async fn ctor() {
     }
 }
 
+pub async fn cleanup() {
+    let database = DATABASE.get().unwrap();
+    let connection = database.connection().await.unwrap();
+
+    let query = r#"
+        DELETE FROM public.migrations;
+        DELETE FROM public.post_watches;
+        DELETE FROM public.posts;
+        DELETE FROM public.post_replies;
+        DELETE FROM public.accounts;
+        DELETE FROM public.post_descriptors;
+        DELETE FROM public.threads;
+    "#;
+
+    connection.batch_execute(query).await.unwrap();
+}
+
 pub async fn dtor() {
     let database = DATABASE.get().unwrap();
     let connection = database.connection().await.unwrap();
