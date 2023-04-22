@@ -12,7 +12,7 @@ pub fn database() -> &'static Arc<Database> {
 }
 
 pub async fn ctor() {
-    let connection_string = env::var("DATABASE_CONNECTION_STRING").unwrap();
+    let connection_string = "postgresql://localhost/test?user=postgres&password=test123".to_string();
     let database = Database::new(connection_string, 4).await.unwrap();
     let _ = DATABASE.set(Arc::new(database));
 

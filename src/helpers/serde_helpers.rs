@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
-use serde::Serializer;
+use chrono::{DateTime, LocalResult, TimeZone, Utc};
+use serde::{Deserialize, Deserializer, Serializer};
 
 pub fn serialize_datetime<S>(datetime: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -11,4 +11,19 @@ pub fn serialize_datetime<S>(datetime: &Option<DateTime<Utc>>, serializer: S) ->
 
     let datetime = datetime.unwrap();
     return serializer.serialize_i64(datetime.timestamp_millis());
+}
+
+pub fn deserialize_datetime<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+    where D: Deserializer<'de>
+{
+    let timestamp = i64::deserialize(deserializer)?;
+    let date_time = Utc.timestamp_millis_opt(timestamp);
+
+    let date_time = match date_time {
+        LocalResult::Single(t) => t,
+        LocalResult::None => return Ok(None),
+        LocalResult::Ambiguous(_, _) => return Ok(None)
+    };
+
+    return Ok(Some(date_time));
 }

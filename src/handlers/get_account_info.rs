@@ -8,21 +8,21 @@ use hyper::Response;
 use serde::{Deserialize, Serialize};
 
 use crate::handlers::shared::{ContentType, error_response, ServerSuccessResponse, success_response};
-use crate::helpers::serde_helpers::serialize_datetime;
+use crate::helpers::serde_helpers::{deserialize_datetime, serialize_datetime};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
 use crate::model::repository::account_repository::AccountId;
 
-#[derive(Deserialize)]
-struct AccountInfoRequest {
-    user_id: String
+#[derive(Serialize, Deserialize)]
+pub struct AccountInfoRequest {
+    pub user_id: String
 }
 
-#[derive(Serialize)]
-struct AccountInfoResponse {
-    is_valid: bool,
-    #[serde(serialize_with = "serialize_datetime")]
-    valid_until: Option<DateTime<Utc>>
+#[derive(Serialize, Deserialize)]
+pub struct AccountInfoResponse {
+    pub is_valid: bool,
+    #[serde(serialize_with = "serialize_datetime", deserialize_with = "deserialize_datetime")]
+    pub valid_until: Option<DateTime<Utc>>
 }
 
 impl ServerSuccessResponse for AccountInfoResponse {
