@@ -9,12 +9,11 @@ use chrono::{DateTime, FixedOffset};
 use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::Client;
-use serde::Deserialize;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
 use crate::helpers::post_helpers;
-use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
+use crate::model::data::chan::{ChanThread, PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, post_repository, thread_repository};
 use crate::model::repository::site_repository::SiteRepository;
@@ -37,46 +36,6 @@ pub struct ThreadWatcher {
 pub struct FoundPostReply {
     pub origin: PostDescriptor,
     pub replies_to: PostDescriptor
-}
-
-#[derive(Debug, Deserialize)]
-struct ChanThread {
-    posts: Vec<ChanPost>
-}
-
-impl ChanThread {
-    pub fn get_original_post(&self) -> Option<&ChanPost> {
-        for post in &self.posts {
-            if post.is_op() {
-                return Some(&post);
-            }
-        }
-
-        return None;
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct ChanPost {
-    no: u64,
-    subno: Option<u64>,
-    resto: u64,
-    closed: Option<i32>,
-    archived: Option<i32>,
-    com: Option<String>
-}
-
-impl ChanPost {
-    pub fn is_op(&self) -> bool {
-        return self.resto == 0;
-    }
-
-    pub fn is_not_active(&self) -> bool {
-        let closed = self.closed.unwrap_or(0);
-        let archived = self.archived.unwrap_or(0);
-
-        return closed == 1 || archived == 1;
-    }
 }
 
 impl ThreadWatcher {
@@ -316,7 +275,11 @@ async fn process_thread(
             );
         })?;
 
-    let chan_thread = serde_json::from_str::<ChanThread>(response_text.as_str());
+    let chan_thread = site_repository.read_thread_json(
+        thread_descriptor.site_descriptor(),
+        &response_text
+    );
+
     if chan_thread.is_err() {
         let to_print_chars_count = 512;
         let chars = response_text.chars();
@@ -348,6 +311,12 @@ async fn process_thread(
     }
 
     let chan_thread = chan_thread.unwrap();
+    if chan_thread.is_none() {
+        error!("process_thread({}) Failed to read thread json", thread_descriptor);
+        return Err(anyhow!("Failed to read thread json (None returned)"))
+    }
+
+    let chan_thread = chan_thread.unwrap();
 
     let original_post = chan_thread.get_original_post();
     if original_post.is_none() {
@@ -367,8 +336,8 @@ async fn process_thread(
             "process_thread({}) marking thread as dead it's either archived or closed \
             (archived: {}, closed: {})",
             thread_descriptor,
-            original_post.archived.unwrap_or(0) == 1,
-            original_post.closed.unwrap_or(0) == 1,
+            original_post.archived,
+            original_post.closed,
         );
 
         post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
@@ -465,8 +434,8 @@ async fn process_posts(
     for post in &chan_thread.posts {
         let origin = PostDescriptor::from_thread_descriptor(
             thread_descriptor.clone(),
-            post.no,
-            post.subno.unwrap_or(0)
+            post.post_no,
+            post.post_sub_no.unwrap_or(0)
         );
 
         if last_processed_post.is_some() {
@@ -479,7 +448,7 @@ async fn process_posts(
 
         new_posts_count += 1;
 
-        let post_comment = post.com.as_ref().map(|com| com.as_str()).unwrap_or("");
+        let post_comment = post.comment_unparsed.as_ref().map(|com| com.as_str()).unwrap_or("");
         if post_comment.is_empty() {
             continue;
         }
@@ -526,8 +495,8 @@ async fn process_posts(
 
     let last_post_descriptor = PostDescriptor::from_thread_descriptor(
         thread_descriptor.clone(),
-        last_post.no,
-        last_post.subno.unwrap_or(0)
+        last_post.post_no,
+        last_post.post_sub_no.unwrap_or(0)
     );
 
     debug!(

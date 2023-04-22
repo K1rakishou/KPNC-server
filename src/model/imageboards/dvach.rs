@@ -3,6 +3,7 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
+use tokio_postgres::types::IsNull::No;
 use url::Url;
 
 use crate::helpers::string_helpers;
@@ -11,34 +12,39 @@ use crate::model::imageboards::base_imageboard::Imageboard;
 
 lazy_static! {
     static ref POST_URL_REGEX: Regex =
-        Regex::new(r"https://boards.(\w+).org/(\w+)/thread/(\d+)(?:#p(\d+))?").unwrap();
+        Regex::new(r"https://(\w+).\w+/(\w+)/res/(\d+).html(?:#(\d+))?").unwrap();
 }
 
-pub struct Chan4 {
+
+pub struct Dvach {
 
 }
 
 #[derive(Debug, Deserialize)]
-struct Chan4Post {
-    no: u64,
-    resto: u64,
+struct DvachPost {
+    num: u64,
+    op: u64,
     closed: Option<i32>,
-    archived: Option<i32>,
-    com: Option<String>
+    comment: Option<String>
 }
 
 #[derive(Debug, Deserialize)]
-struct Chan4Thread {
-    posts: Vec<Chan4Post>
+struct DvachThread {
+    posts: Vec<DvachPost>
 }
 
-impl Imageboard for Chan4 {
+#[derive(Debug, Deserialize)]
+struct DvachThreads {
+    threads: Vec<DvachThread>
+}
+
+impl Imageboard for Dvach {
     fn name(&self) -> &'static str {
-        return "4chan";
+        return "2ch"
     }
 
     fn matches(&self, site_descriptor: &SiteDescriptor) -> bool {
-        return site_descriptor.site_name_str() == "4chan";
+        return site_descriptor.site_name_str() == "2ch";
     }
 
     fn url_matches(&self, url: &str) -> bool {
@@ -61,7 +67,7 @@ impl Imageboard for Chan4 {
 
         let site_name = site_name.to_string().to_lowercase();
         // TODO: check top-level domain as well
-        return site_name == "4chan" || site_name == "4channel";
+        return site_name == "2ch";
     }
 
     fn post_url_to_post_descriptor(&self, post_url: &str) -> Option<PostDescriptor> {
@@ -118,16 +124,17 @@ impl Imageboard for Chan4 {
     fn post_descriptor_to_url(&self, post_descriptor: &PostDescriptor) -> Option<String> {
         let mut string_builder = string_builder::Builder::new(72);
 
-        string_builder.append("https://boards.");
+        string_builder.append("https://");
         string_builder.append(post_descriptor.site_name().as_str());
-        string_builder.append(".org");
+        string_builder.append(".hk");
         string_builder.append("/");
         string_builder.append(post_descriptor.board_code().as_str());
         string_builder.append("/");
-        string_builder.append("thread");
+        string_builder.append("res");
         string_builder.append("/");
         string_builder.append(post_descriptor.thread_no().to_string());
-        string_builder.append("#p");
+        string_builder.append(".html");
+        string_builder.append("#");
         string_builder.append(post_descriptor.post_no.to_string());
 
         let string = string_builder.string();
@@ -138,16 +145,13 @@ impl Imageboard for Chan4 {
         return Some(string.unwrap());
     }
 
-    fn thread_json_endpoint(
-        &self,
-        thread_descriptor: &ThreadDescriptor
-    ) -> Option<String> {
+    fn thread_json_endpoint(&self, thread_descriptor: &ThreadDescriptor) -> Option<String> {
         if !self.matches(&thread_descriptor.catalog_descriptor.site_descriptor) {
             return None;
         }
 
         let endpoint = format!(
-            "https://a.4cdn.org/{}/thread/{}.json",
+            "https://2ch.hk/{}/res/{}.json",
             thread_descriptor.board_code(),
             thread_descriptor.thread_no
         );
@@ -156,21 +160,27 @@ impl Imageboard for Chan4 {
     }
 
     fn read_thread_json(&self, json: &String) -> anyhow::Result<Option<ChanThread>> {
-        let chan4_thread = serde_json::from_str::<Chan4Thread>(json)?;
-        if chan4_thread.posts.is_empty() {
+        let dvach_threads = serde_json::from_str::<DvachThreads>(json)?;
+        if dvach_threads.threads.is_empty() {
             return Ok(None);
         }
 
-        let mut chan_posts = Vec::<ChanPost>::with_capacity(chan4_thread.posts.len());
+        let dvach_thread = dvach_threads.threads.first();
+        if dvach_thread.is_none() {
+            return Ok(None);
+        }
 
-        for chan4_post in &chan4_thread.posts {
+        let dvach_thread = dvach_thread.unwrap();
+        let mut chan_posts = Vec::<ChanPost>::with_capacity(dvach_thread.posts.len());
+
+        for chan4_post in &dvach_thread.posts {
             let chan_post = ChanPost {
-                post_no: chan4_post.no,
+                post_no: chan4_post.num,
                 post_sub_no: None,
-                is_op: chan4_post.resto == 0,
+                is_op: chan4_post.op == 1,
                 closed: chan4_post.closed.unwrap_or(0) == 1,
-                archived: chan4_post.archived.unwrap_or(0) == 1,
-                comment_unparsed: chan4_post.com.clone()
+                archived: false,
+                comment_unparsed: chan4_post.comment.clone()
             };
 
             chan_posts.push(chan_post);
@@ -183,18 +193,18 @@ impl Imageboard for Chan4 {
 
 #[test]
 fn test() {
-    let chan4 = Chan4 {};
+    let dvach = Dvach {};
 
-    let pd1 = chan4.post_url_to_post_descriptor(
-        "https://boards.4chan.org/a/thread/1234567890#p1234567891"
+    let pd1 = dvach.post_url_to_post_descriptor(
+        "https://2ch.hk/test/res/197273.html#197871"
     ).unwrap();
 
-    assert_eq!("4chan", pd1.site_name().as_str());
-    assert_eq!(1234567890, pd1.thread_no());
-    assert_eq!(1234567891, pd1.post_no);
+    assert_eq!("2ch", pd1.site_name().as_str());
+    assert_eq!(197273, pd1.thread_no());
+    assert_eq!(197871, pd1.post_no);
 
-    let td1 = chan4.post_url_to_post_descriptor(
-        "https://boards.4chan.org/a/thread/1234567890"
+    let td1 = dvach.post_url_to_post_descriptor(
+        "https://2ch.hk/test/res/197273.html"
     );
 
     assert!(td1.is_none());

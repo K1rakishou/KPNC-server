@@ -40,6 +40,21 @@ pub struct PostDescriptor {
     pub post_sub_no: u64
 }
 
+#[derive(Debug)]
+pub struct ChanPost {
+    pub post_no: u64,
+    pub post_sub_no: Option<u64>,
+    pub is_op: bool,
+    pub closed: bool,
+    pub archived: bool,
+    pub comment_unparsed: Option<String>
+}
+
+#[derive(Debug)]
+pub struct ChanThread {
+    pub posts: Vec<ChanPost>
+}
+
 impl Display for SiteDescriptor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.site_name)?;
@@ -241,5 +256,23 @@ impl PostDescriptor {
             post_no,
             post_sub_no
         }
+    }
+}
+
+impl ChanPost {
+    pub fn is_not_active(&self) -> bool {
+        return self.closed || self.archived;
+    }
+}
+
+impl ChanThread {
+    pub fn get_original_post(&self) -> Option<&ChanPost> {
+        for post in &self.posts {
+            if post.is_op {
+                return Some(&post);
+            }
+        }
+
+        return None;
     }
 }

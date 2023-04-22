@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
+use crate::model::data::chan::{ChanThread, PostDescriptor, SiteDescriptor, ThreadDescriptor};
 use crate::model::imageboards::base_imageboard::Imageboard;
 use crate::model::imageboards::chan4::Chan4;
+use crate::model::imageboards::dvach::Dvach;
 
 type ImageboardSynced = Arc<dyn Imageboard + Sync + Send>;
 
@@ -17,6 +18,9 @@ impl SiteRepository {
 
         let chan4 = Chan4 {};
         sites.insert(chan4.name().to_string(), Arc::new(chan4));
+
+        let dvach = Dvach {};
+        sites.insert(dvach.name().to_string(), Arc::new(dvach));
 
         return SiteRepository { sites };
     }
@@ -52,6 +56,20 @@ impl SiteRepository {
         }
 
         return None;
+    }
+
+    pub fn read_thread_json(
+        &self,
+        site_descriptor: &SiteDescriptor,
+        json: &String
+    ) -> anyhow::Result<Option<ChanThread>> {
+        let imageboard = self.sites.get(site_descriptor.site_name());
+        if imageboard.is_none() {
+            return Ok(None);
+        }
+
+        let imageboard = imageboard.unwrap();
+        return imageboard.read_thread_json(json)
     }
 
 }
