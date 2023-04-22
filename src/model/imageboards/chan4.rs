@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use lazy_static::lazy_static;
-use regex::Regex;
+use regex::{Captures, Regex};
 use serde::Deserialize;
 use url::Url;
 
@@ -12,6 +12,8 @@ use crate::model::imageboards::base_imageboard::Imageboard;
 lazy_static! {
     static ref POST_URL_REGEX: Regex =
         Regex::new(r"https://boards.(\w+).org/(\w+)/thread/(\d+)(?:#p(\d+))?").unwrap();
+    static ref POST_REPLY_QUOTE_REGEX: Regex =
+        Regex::new(r#"class="quotelink">&gt;&gt;(\d+)</a>"#).unwrap();
 }
 
 pub struct Chan4 {
@@ -155,6 +157,10 @@ impl Imageboard for Chan4 {
         return Some(endpoint);
     }
 
+    fn post_quote_regex(&self) -> &'static Regex {
+        return &POST_REPLY_QUOTE_REGEX;
+    }
+
     fn read_thread_json(&self, json: &String) -> anyhow::Result<Option<ChanThread>> {
         let chan4_thread = serde_json::from_str::<Chan4Thread>(json)?;
         if chan4_thread.posts.is_empty() {
@@ -182,7 +188,7 @@ impl Imageboard for Chan4 {
 }
 
 #[test]
-fn test() {
+fn test_url_conversion() {
     let chan4 = Chan4 {};
 
     let pd1 = chan4.post_url_to_post_descriptor(
@@ -198,4 +204,20 @@ fn test() {
     );
 
     assert!(td1.is_none());
+}
+
+#[test]
+fn test_post_quote_regex() {
+    let test_string = "<a href=\"#p251260223\" class=\"quotelink\">&gt;&gt;251260223</a>";
+    let captures = POST_REPLY_QUOTE_REGEX.captures(test_string).unwrap();
+    assert_eq!(2, captures.len());
+    assert_eq!("251260223", captures.get(1).unwrap().as_str());
+
+    let test_string = "<a href=\"#p92933496\" class=\"quotelink\">&gt;&gt;92933496</a><br>\
+    <a href=\"#p92933523\" class=\"quotelink\">&gt;&gt;92933523</a><br>\
+    Will look into them, upon first look, it shouldn&#039;t be much work";
+    let captures = POST_REPLY_QUOTE_REGEX.captures_iter(test_string).collect::<Vec<Captures>>();
+    assert_eq!(2, captures.len());
+    assert_eq!("92933496", captures.get(0).unwrap().get(1).unwrap().as_str());
+    assert_eq!("92933523", captures.get(1).unwrap().get(1).unwrap().as_str());
 }

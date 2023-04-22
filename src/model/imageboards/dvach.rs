@@ -1,9 +1,8 @@
 use std::str::FromStr;
 
 use lazy_static::lazy_static;
-use regex::Regex;
+use regex::{Captures, Regex};
 use serde::Deserialize;
-use tokio_postgres::types::IsNull::No;
 use url::Url;
 
 use crate::helpers::string_helpers;
@@ -13,6 +12,8 @@ use crate::model::imageboards::base_imageboard::Imageboard;
 lazy_static! {
     static ref POST_URL_REGEX: Regex =
         Regex::new(r"https://(\w+).\w+/(\w+)/res/(\d+).html(?:#(\d+))?").unwrap();
+    static ref POST_REPLY_QUOTE_REGEX: Regex =
+        Regex::new(r##">>>(\d+)\s*</a>"##).unwrap();
 }
 
 
@@ -159,6 +160,10 @@ impl Imageboard for Dvach {
         return Some(endpoint);
     }
 
+    fn post_quote_regex(&self) -> &'static Regex {
+        return &POST_REPLY_QUOTE_REGEX;
+    }
+
     fn read_thread_json(&self, json: &String) -> anyhow::Result<Option<ChanThread>> {
         let dvach_threads = serde_json::from_str::<DvachThreads>(json)?;
         if dvach_threads.threads.is_empty() {
@@ -192,7 +197,7 @@ impl Imageboard for Dvach {
 }
 
 #[test]
-fn test() {
+fn test_url_conversion() {
     let dvach = Dvach {};
 
     let pd1 = dvach.post_url_to_post_descriptor(
@@ -208,4 +213,16 @@ fn test() {
     );
 
     assert!(td1.is_none());
+}
+
+#[test]
+fn test_post_quote_regex() {
+    let test_string = "<a href=\"/test/res/197273.html#197895\" class=\"post-reply-link\" \
+    data-thread=\"197273\" data-num=\"197895\">>>197895</a><br><a href=\"/test/res/197273.html#197896\" \
+    class=\"post-reply-link\" data-thread=\"197273\" data-num=\"197896\">>>197896</a><br>test reply 1";
+
+    let captures = POST_REPLY_QUOTE_REGEX.captures_iter(test_string).collect::<Vec<Captures>>();
+    assert_eq!(2, captures.len());
+    assert_eq!("197895", captures.get(0).unwrap().get(1).unwrap().as_str());
+    assert_eq!("197896", captures.get(1).unwrap().get(1).unwrap().as_str());
 }

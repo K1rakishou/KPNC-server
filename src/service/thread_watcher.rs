@@ -7,7 +7,6 @@ use std::time::Duration;
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, FixedOffset};
 use lazy_static::lazy_static;
-use regex::Regex;
 use reqwest::Client;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -20,9 +19,6 @@ use crate::model::repository::site_repository::SiteRepository;
 use crate::service::fcm_sender::FcmSender;
 
 lazy_static! {
-    static ref POST_REPLY_QUOTE_REGEX: Regex =
-        Regex::new(r##"<a\s+href="#p(\d+)"\s+class="quotelink">&gt;&gt;\d+</a>"##).unwrap();
-
     static ref HTTP_CLIENT: Client = reqwest::Client::new();
 }
 
@@ -353,7 +349,12 @@ async fn process_thread(
         chan_thread.posts.len()
     );
 
-    process_posts(thread_descriptor, &chan_thread, database).await?;
+    process_posts(
+        site_repository,
+        thread_descriptor,
+        &chan_thread,
+        database
+    ).await?;
 
     if last_modified.is_some() {
         let last_modified = last_modified.unwrap();
@@ -399,6 +400,7 @@ async fn was_content_modified_since_last_check(
 }
 
 async fn process_posts(
+    site_repository: &Arc<SiteRepository>,
     thread_descriptor: &ThreadDescriptor,
     chan_thread: &ChanThread,
     database: &Arc<Database>
@@ -409,6 +411,14 @@ async fn process_posts(
         info!("process_posts({}) no posts to process", thread_descriptor);
         return Ok(());
     }
+
+    let imageboard = site_repository.by_site_descriptor(thread_descriptor.site_descriptor());
+    if imageboard.is_none() {
+        info!("process_posts({}) no site found", thread_descriptor);
+        return Ok(());
+    }
+
+    let imageboard = imageboard.unwrap();
 
     let last_processed_post = thread_repository::get_last_processed_post(
         thread_descriptor,
@@ -430,6 +440,7 @@ async fn process_posts(
 
     let mut found_post_replies_set = HashSet::<FoundPostReply>::with_capacity(chan_thread.posts.len());
     let mut new_posts_count = 0;
+    let post_quote_regex = imageboard.post_quote_regex();
 
     for post in &chan_thread.posts {
         let origin = PostDescriptor::from_thread_descriptor(
@@ -453,7 +464,7 @@ async fn process_posts(
             continue;
         }
 
-        let captures_iter = POST_REPLY_QUOTE_REGEX.captures_iter(post_comment);
+        let captures_iter = post_quote_regex.captures_iter(post_comment);
         for captures in captures_iter {
             let quote_post_no_str = captures
                 .get(1)
@@ -569,17 +580,4 @@ fn post_descriptor_db_ids_to_vec_of_unique_keys(
     }
 
     return result_vec;
-}
-
-#[test]
-fn test_regex() {
-    let test_string = "<a href=\"#p251260223\" class=\"quotelink\">&gt;&gt;251260223</a>";
-    let captures = POST_REPLY_QUOTE_REGEX.captures(test_string).unwrap();
-    assert_eq!(2, captures.len());
-    assert_eq!("251260223", captures.get(1).unwrap().as_str());
-
-    let test_string = "<a href=\"#p425813171\" class=\"quotelink\">&gt;&gt;425813171</a>";
-    let captures = POST_REPLY_QUOTE_REGEX.captures(test_string).unwrap();
-    assert_eq!(2, captures.len());
-    assert_eq!("425813171", captures.get(1).unwrap().as_str());
 }

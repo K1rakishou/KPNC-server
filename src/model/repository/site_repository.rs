@@ -36,6 +36,10 @@ impl SiteRepository {
         return None;
     }
 
+    pub fn by_site_descriptor(&self, site_descriptor: &SiteDescriptor) -> Option<&ImageboardSynced> {
+        return self.sites.get(site_descriptor.site_name());
+    }
+
     pub fn thread_json_endpoint(&self, thread_descriptor: &ThreadDescriptor) -> Option<String> {
         for (_, imageboard) in &self.sites {
             let matches = imageboard.matches(&thread_descriptor.site_descriptor());
