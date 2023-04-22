@@ -7,6 +7,7 @@ use hyper::Response;
 use serde::{Deserialize, Serialize};
 
 use crate::handlers::shared::{ContentType, empty_success_response, error_response_str, error_response_string, validate_post_url};
+use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::AccountId;
 use crate::model::repository::post_repository;
@@ -72,6 +73,7 @@ pub async fn handle(
     }
 
     let post_descriptor = post_descriptor.unwrap();
+    debug!("watch_post() post_descriptor: {}", post_descriptor);
 
     let post_watch_created_result = post_repository::start_watching_post(
         database,
@@ -113,9 +115,9 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     info!(
-        "Post watch for post {} and account id {} was not created because it already exists",
+        "Post watch for post {} and account id {} was successfully created",
         post_descriptor,
-        account_id
+        account_id.format_token()
     );
 
     return Ok(response);

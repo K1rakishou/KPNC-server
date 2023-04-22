@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Context;
 
 use crate::helpers::db_helpers;
+use crate::helpers::string_helpers::FormatToken;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::{account_repository, post_descriptor_id_repository};
@@ -24,11 +25,22 @@ pub async fn start_watching_post(
 ) -> anyhow::Result<StartWatchingPostResult> {
     let account = account_repository::get_account(account_id, database).await?;
     if account.is_none() {
+        info!(
+            "start_watching_post() account with id \'{}\' does not exist",
+            account_id.format_token()
+        );
+
         return Ok(StartWatchingPostResult::AccountDoesNotExist);
     }
 
     let account = account.unwrap();
     if !account.is_valid() {
+        info!(
+            "start_watching_post() account with id \'{}\' is not valid (status: {})",
+            account_id.format_token(),
+            account.validation_status().unwrap()
+        );
+
         return Ok(StartWatchingPostResult::AccountIsNotValid);
     }
 
@@ -49,7 +61,7 @@ pub async fn start_watching_post(
         ON CONFLICT (owner_post_descriptor_id)
         DO UPDATE SET owner_post_descriptor_id = $1
         RETURNING posts.id_generated
-"#;
+    "#;
 
     let owner_post_id: i64 = transaction.query_one(
         query,
@@ -67,7 +79,7 @@ pub async fn start_watching_post(
         VALUES ($1, $2)
         ON CONFLICT (owner_post_id, owner_account_id) DO NOTHING
         RETURNING id_generated
-"#;
+    "#;
 
     let new_watch_inserted = transaction.query_opt(
         query,
@@ -80,12 +92,18 @@ pub async fn start_watching_post(
     if !new_watch_inserted {
         transaction.rollback().await?;
 
-        debug!("start_watching_post() Post watch {} already exists in the database", post_descriptor);
+        info!("start_watching_post() Post watch {} already exists in the database", post_descriptor);
         return Ok(StartWatchingPostResult::PostWatchAlreadyExists);
     }
 
     transaction.commit().await?;
-    debug!("start_watching_post() Created new post watch for post {}", post_descriptor);
+
+    let firebase_token = account.firebase_token.unwrap();
+    info!(
+        "start_watching_post() Created new post watch for post {} for user with token {}",
+        post_descriptor,
+        firebase_token.format_token()
+    );
 
     return Ok(StartWatchingPostResult::Ok);
 }

@@ -55,7 +55,13 @@ impl FcmSender {
             return Ok(());
         }
 
-        info!("send_fcm_messages() Got {} unsent replies", unsent_replies.len());
+        for (firebase_token, unsent_replies_for_token) in &unsent_replies {
+            info!(
+                "send_fcm_messages() Got {} unsent replies for user with token {}",
+                unsent_replies_for_token.len(),
+                firebase_token.format_token()
+            );
+        }
 
         let firebase_api_key = Arc::new(self.firebase_api_key.clone());
         let capacity = unsent_replies.len() / 2;
@@ -151,7 +157,12 @@ async fn send_unsent_reply(
         new_reply_urls
     };
 
-    debug!("send_unsent_reply() new_fcm_replies_message: {:?}", new_fcm_replies_message);
+    debug!(
+        "send_unsent_reply({}) new_fcm_replies_message: {:?}",
+        firebase_token.format_token(),
+        new_fcm_replies_message
+    );
+
     let new_fcm_replies_message_json = serde_json::to_string(&new_fcm_replies_message)?;
 
     let mut map = HashMap::new();
@@ -175,8 +186,8 @@ async fn send_unsent_reply(
 
         let error = error.unwrap();
         error!(
-            "Failed to send FCM messages to \'{}\' because of error: {:?}",
-            firebase_token.as_str().format_token(),
+            "send_unsent_reply({}) Failed to send FCM messages because of error: {:?}",
+            firebase_token.format_token(),
             error
         );
     } else {
@@ -190,9 +201,9 @@ async fn send_unsent_reply(
         }
 
         info!(
-            "Successfully sent a batch of {} replies to \'{}\'",
+            "send_unsent_reply({}) Successfully sent a batch of {} replies",
+            firebase_token.format_token(),
             unsent_replies.len(),
-            firebase_token.as_str().format_token()
         );
     }
 

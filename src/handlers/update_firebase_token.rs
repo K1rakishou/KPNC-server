@@ -74,7 +74,7 @@ pub async fn handle(
 
     info!(
         "update_firebase_token() Successfully updated firebase_token. account_id: \'{}\', firebase_token: \'{}\'",
-        account_id,
+        account_id.format_token(),
         firebase_token.format_token()
     );
 

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use crate::model::repository::account_repository::{FirebaseToken, AccountId};
+
+use crate::model::repository::account_repository::{AccountId, FirebaseToken};
 
 pub trait FormatToken {
     fn format_token(&self) -> Cow<str>;
@@ -20,7 +21,7 @@ impl FormatToken for &str {
         }
 
         let start = &chars[0..part_length];
-        let end = &chars[(string_length - 1) - part_length..(string_length - 1)];
+        let end = &chars[(string_length - 1) - part_length..];
 
         let formatted_token = format!("{}...{}", String::from_iter(start), String::from_iter(end));
         return Cow::Owned(formatted_token);

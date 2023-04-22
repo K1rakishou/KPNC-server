@@ -27,6 +27,11 @@ pub struct Account {
 
 impl Account {
     pub fn is_valid(&self) -> bool {
+        let firebase_token = &self.firebase_token;
+        if firebase_token.is_none() {
+            return false;
+        }
+
         let valid_until = self.valid_until;
         if valid_until.is_none() {
             return false
@@ -36,6 +41,33 @@ impl Account {
         let now = chrono::Utc::now();
 
         return valid_until >= now;
+    }
+
+    pub fn validation_status(&self) -> Option<String> {
+        let firebase_token = &self.firebase_token;
+        if firebase_token.is_none() {
+            return Some("firebase_token is not set".to_string());
+        }
+
+        let valid_until = self.valid_until;
+        if valid_until.is_none() {
+            return Some("valid_until is not set".to_string());
+        }
+
+        let valid_until = valid_until.unwrap();
+        let now = chrono::Utc::now();
+
+        if valid_until < now {
+            let message = format!(
+                "Account is not valid, now: {}, valid_until: {}",
+                now,
+                valid_until
+            );
+
+            return Some(message);
+        }
+
+        return None;
     }
 }
 
