@@ -341,3 +341,13 @@ fn insert_pd_for_td(
     pd_to_td_cache_locked.get_mut(&post_descriptor.thread_descriptor).unwrap()
         .insert(post_descriptor.clone());
 }
+
+pub async fn test_cleanup() {
+    let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
+    let mut dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.write().await;
+    let mut pd_to_td_cache_locked = PD_TO_TD_CACHE.write().await;
+
+    pd_to_dbid_cache_locked.clear();
+    dbid_to_pd_cache_locked.clear();
+    pd_to_td_cache_locked.clear();
+}

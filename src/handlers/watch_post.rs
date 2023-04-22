@@ -4,7 +4,7 @@ use anyhow::Context;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};
 use hyper::Response;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::handlers::shared::{ContentType, empty_success_response, error_response_str, error_response_string, validate_post_url};
 use crate::model::database::db::Database;
@@ -13,10 +13,10 @@ use crate::model::repository::post_repository;
 use crate::model::repository::post_repository::StartWatchingPostResult;
 use crate::model::repository::site_repository::SiteRepository;
 
-#[derive(Deserialize)]
-struct WatchPostRequest {
-    user_id: String,
-    post_url: String
+#[derive(Serialize, Deserialize)]
+pub struct WatchPostRequest {
+    pub user_id: String,
+    pub post_url: String
 }
 
 pub async fn handle(
@@ -79,8 +79,16 @@ pub async fn handle(
         &post_descriptor
     ).await.context(format!("Failed to start watching post {}", post_descriptor))?;
 
-    if post_watch_created_result == StartWatchingPostResult::AccountDoesNotExist {
-        let response_json = error_response_str("Account does not exist or already expired")?;
+    if post_watch_created_result != StartWatchingPostResult::Ok &&
+        post_watch_created_result != StartWatchingPostResult::PostWatchAlreadyExists {
+        let error_message = match post_watch_created_result {
+            StartWatchingPostResult::Ok => unreachable!(),
+            StartWatchingPostResult::PostWatchAlreadyExists => unreachable!(),
+            StartWatchingPostResult::AccountDoesNotExist => "Account does not exist",
+            StartWatchingPostResult::AccountIsNotValid => "Account already expired",
+        };
+
+        let response_json = error_response_str(error_message)?;
 
         let response = Response::builder()
             .json()

@@ -33,7 +33,9 @@ impl Account {
         }
 
         let valid_until = valid_until.unwrap();
-        return valid_until >= chrono::Utc::now();
+        let now = chrono::Utc::now();
+
+        return valid_until >= now;
     }
 }
 
@@ -335,6 +337,13 @@ pub async fn test_get_account_from_cache(
         .cloned()
 }
 
+pub async fn test_put_account_into_cache(
+    account: &Account
+) {
+    let mut account_cache_locked = ACCOUNTS_CACHE.write().await;
+    account_cache_locked.insert(account.clone().account_id, account.clone());
+}
+
 pub async fn test_get_account_from_database(
     account_id: &AccountId,
     database: &Arc<Database>
@@ -362,6 +371,35 @@ pub async fn test_get_account_from_database(
 
     let account = Account::from_row(&row.unwrap()).unwrap();
     return Ok(Some(account));
+}
+
+pub async fn test_put_account_into_database(
+    account: &Account,
+    database: &Arc<Database>
+) -> anyhow::Result<()> {
+    let query = r#"
+        INSERT INTO accounts
+        (
+            account_id,
+            valid_until,
+            deleted_on
+        )
+        VALUES ($1, $2, NULL)
+        ON CONFLICT (account_id) DO UPDATE SET valid_until = $2
+"#;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query).await?;
+
+    connection.execute(
+        &statement,
+        &[
+            &account.account_id.id,
+            &account.valid_until
+        ]
+    ).await?;
+
+    return Ok(());
 }
 
 pub async fn test_count_accounts_in_database(database: &Arc<Database>) -> anyhow::Result<i64> {

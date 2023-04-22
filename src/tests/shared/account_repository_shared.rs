@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use fcm::Duration;
 use lazy_static::lazy_static;
 use serde::de::DeserializeOwned;
 
@@ -10,7 +11,7 @@ use crate::handlers::update_firebase_token::UpdateFirebaseTokenRequest;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
 use crate::model::repository::account_repository::{Account, AccountId};
-use crate::tests::shared::{account_repository_shared, http_client_shared};
+use crate::tests::shared::{account_repository_shared, database_shared, http_client_shared};
 
 lazy_static! {
     pub static ref TEST_BAD_USER_ID1: String = String::from("1111111111111111111111111111111");
@@ -40,6 +41,32 @@ pub async fn create_account<'a, T : DeserializeOwned + ServerSuccessResponse>(
     ).await?;
 
     return Ok(response);
+}
+
+pub async fn create_expired_account<'a, T : DeserializeOwned + ServerSuccessResponse>(
+    user_id: &str,
+    valid_for_days: u64
+) -> anyhow::Result<()> {
+    let _ = create_account::<T>(user_id, valid_for_days).await?;
+    let account_id = AccountId::test_unsafe(user_id)?;
+
+    let database = database_shared::database();
+
+    let mut account = account_repository::test_get_account_from_cache(&account_id).await.unwrap();
+    let new_valid_until = account.valid_until.unwrap() - Duration::days(3);
+    account.valid_until = Some(new_valid_until);
+
+    {
+        // Update valid_until in the cache
+        account_repository::test_put_account_into_cache(&account).await;
+    }
+
+    {
+        // Update valid_until in the database
+        account_repository::test_put_account_into_database(&account, database).await.unwrap();
+    }
+
+    return Ok(());
 }
 
 pub async fn get_account_info<'a, T : DeserializeOwned + ServerSuccessResponse>(

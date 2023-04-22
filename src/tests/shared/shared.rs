@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::init_logger;
-use crate::model::repository::{account_repository, migrations_repository};
+use crate::model::repository::{account_repository, migrations_repository, post_descriptor_id_repository};
 use crate::tests::shared::{database_shared, server_shared, site_repository_shared};
 
 pub struct TestCase {
@@ -21,6 +21,7 @@ pub async fn run_test(tests: Vec<TestCase>) {
 
         database_shared::cleanup().await;
         account_repository::test_cleanup().await;
+        post_descriptor_id_repository::test_cleanup().await;
         (test.function)().await;
 
         info!("[{}/{}] Running \'{}\'...OK", (index + 1), tests_count, test.name);
