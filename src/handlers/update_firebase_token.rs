@@ -5,17 +5,18 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};
 use hyper::Response;
 use serde::Deserialize;
+use serde::Serialize;
 
-use crate::handlers::shared::{ContentType, empty_success_response, error_response_string};
+use crate::handlers::shared::{ContentType, empty_success_response, error_response_str, error_response_string};
 use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
 use crate::model::repository::account_repository::{AccountId, FirebaseToken, UpdateFirebaseTokenResult};
 
-#[derive(Deserialize)]
-struct UpdateFirebaseTokenRequest {
-    user_id: String,
-    firebase_token: String
+#[derive(Serialize, Deserialize)]
+pub struct UpdateFirebaseTokenRequest {
+    pub user_id: String,
+    pub firebase_token: String
 }
 
 pub async fn handle(
@@ -53,9 +54,9 @@ pub async fn handle(
             error_message
         );
 
-        let response_json = error_response_string(&full_error_message)?;
-        error!("create_account() {}", full_error_message);
+        error!("update_firebase_token() {}", full_error_message);
 
+        let response_json = error_response_str(error_message)?;
         let response = Response::builder()
             .json()
             .status(200)
@@ -72,7 +73,7 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     info!(
-        "Successfully updated firebase_token. account_id: \'{}\', firebase_token: \'{}\'",
+        "update_firebase_token() Successfully updated firebase_token. account_id: \'{}\', firebase_token: \'{}\'",
         account_id,
         firebase_token.format_token()
     );

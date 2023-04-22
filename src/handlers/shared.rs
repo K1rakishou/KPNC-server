@@ -57,10 +57,10 @@ pub fn success_response<'a, T : ServerSuccessResponse>(
 }
 
 pub fn error_response_string(error: &String) -> anyhow::Result<String> {
-    return error_response(error.as_str());
+    return error_response_str(error.as_str());
 }
 
-pub fn error_response(error: &str) -> anyhow::Result<String> {
+pub fn error_response_str(error: &str) -> anyhow::Result<String> {
     let response: ServerResponse<EmptyResponse> = ServerResponse {
         data: None,
         error: Some(error.to_string())

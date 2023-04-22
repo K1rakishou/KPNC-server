@@ -30,7 +30,7 @@ pub async fn router(
         error!("router() path_and_query not found");
 
         let error_message = "path_and_query not found";
-        let response_json = handlers::shared::error_response(error_message)?;
+        let response_json = handlers::shared::error_response_str(error_message)?;
         let response = Response::builder()
             .json()
             .status(200)
@@ -52,7 +52,7 @@ pub async fn router(
         info!("router() Client {} has been throttled", remote_address);
 
         let error_message = "You are making too many requests, please wait a little bit.";
-        let response_json = handlers::shared::error_response(error_message)?;
+        let response_json = handlers::shared::error_response_str(error_message)?;
         let response = Response::builder()
             .json()
             .status(200)

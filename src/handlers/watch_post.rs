@@ -6,7 +6,7 @@ use hyper::body::{Bytes, Incoming};
 use hyper::Response;
 use serde::Deserialize;
 
-use crate::handlers::shared::{ContentType, empty_success_response, error_response, error_response_string, validate_post_url};
+use crate::handlers::shared::{ContentType, empty_success_response, error_response_str, error_response_string, validate_post_url};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::AccountId;
 use crate::model::repository::post_repository;
@@ -80,7 +80,7 @@ pub async fn handle(
     ).await.context(format!("Failed to start watching post {}", post_descriptor))?;
 
     if post_watch_created_result == StartWatchingPostResult::AccountDoesNotExist {
-        let response_json = error_response("Account does not exist or already expired")?;
+        let response_json = error_response_str("Account does not exist or already expired")?;
 
         let response = Response::builder()
             .json()

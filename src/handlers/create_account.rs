@@ -6,7 +6,7 @@ use hyper::body::{Bytes, Incoming};
 use hyper::Response;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::shared::{ContentType, empty_success_response, error_response};
+use crate::handlers::shared::{ContentType, empty_success_response, error_response_str};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::{AccountId, CreateAccountResult};
 use crate::model::repository::account_repository;
@@ -39,7 +39,7 @@ pub async fn handle(
     if valid_for_days <= 0 || valid_for_days > 365 {
         error!("create_account() bad valid_for_days: {}", valid_for_days);
 
-        let response_json = error_response("valid_for_days must be in range 0..365")?;
+        let response_json = error_response_str("valid_for_days must be in range 0..365")?;
         let response = Response::builder()
             .json()
             .status(200)
@@ -69,7 +69,7 @@ pub async fn handle(
 
         error!("create_account() {}", full_error_message);
 
-        let response_json = error_response("Account already exists")?;
+        let response_json = error_response_str("Account already exists")?;
         let response = Response::builder()
             .json()
             .status(200)
@@ -86,7 +86,7 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     info!(
-        "Successfully created new account. account_id: \'{}\', valid_until: {:?}",
+        "create_account() Successfully created new account. account_id: \'{}\', valid_until: {:?}",
         account_id,
         valid_until
     );

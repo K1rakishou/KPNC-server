@@ -90,28 +90,23 @@ impl Display for AccountId {
 }
 
 impl FirebaseToken {
-    pub fn from_str(token: &str) -> anyhow::Result<FirebaseToken> {
-        if token.len() == 0 || token.len() > 1024 {
-            return Err(anyhow!("Bad token length {} must be within 0..128", token.len()));
-        }
-
-        let firebase_token = FirebaseToken { token: String::from(token) };
-        return Ok(firebase_token);
-    }
-
     pub fn from_opt_str(token: Option<&str>) -> anyhow::Result<Option<FirebaseToken>> {
         if token.is_none() {
             return Ok(None);
         }
 
         let token = token.unwrap();
+        return FirebaseToken::from_str(token)
+            .map(|token| Some(token));
+    }
 
+    pub fn from_str(token: &str) -> anyhow::Result<FirebaseToken> {
         if token.len() == 0 || token.len() > 1024 {
-            return Err(anyhow!("Bad token length {} must be within 0..128", token.len()));
+            return Err(anyhow!("Bad token length {} must be within 1..1024", token.len()));
         }
 
         let firebase_token = FirebaseToken { token: String::from(token) };
-        return Ok(Some(firebase_token));
+        return Ok(firebase_token);
     }
 }
 

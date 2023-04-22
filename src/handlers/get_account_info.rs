@@ -7,7 +7,7 @@ use hyper::body::{Bytes, Incoming};
 use hyper::Response;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::shared::{ContentType, error_response, ServerSuccessResponse, success_response};
+use crate::handlers::shared::{ContentType, error_response_str, ServerSuccessResponse, success_response};
 use crate::helpers::serde_helpers::{deserialize_datetime, serialize_datetime};
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
@@ -52,7 +52,7 @@ pub async fn handle(
         .context(format!("Failed to get account from repository with account_id \'{}\'", account_id))?;
 
     if account.is_none() {
-        let response_json = error_response("Account does not exist")?;
+        let response_json = error_response_str("Account does not exist")?;
         error!("get_account_info() Account with id \'{}\' does not exist", account_id);
 
         let response = Response::builder()
