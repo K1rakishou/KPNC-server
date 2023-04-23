@@ -157,7 +157,7 @@ async fn send_unsent_reply(
         new_reply_urls
     };
 
-    debug!(
+    info!(
         "send_unsent_reply({}) new_fcm_replies_message: {:?}",
         firebase_token.format_token(),
         new_fcm_replies_message

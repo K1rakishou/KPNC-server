@@ -227,7 +227,7 @@ async fn process_thread(
     ).await?;
 
     if !thread_updated_since_last_check {
-        debug!(
+        info!(
             "process_thread({}) content wasn't modified since last check, exiting",
             thread_descriptor
         );
@@ -343,7 +343,7 @@ async fn process_thread(
         // because it will be filtered out during the database query.
     }
 
-    debug!(
+    info!(
         "process_thread({}) got thread with {} posts",
         thread_descriptor,
         chan_thread.posts.len()
@@ -359,7 +359,7 @@ async fn process_thread(
     if last_modified.is_some() {
         let last_modified = last_modified.unwrap();
 
-        debug!(
+        info!(
             "process_thread({}) updating last_modified: {}",
             thread_descriptor,
             last_modified
@@ -395,8 +395,19 @@ async fn was_content_modified_since_last_check(
 
     let last_modified_remote = last_modified_remote.unwrap();
     let last_modified_local = last_modified_local.unwrap();
+    let content_was_modified = last_modified_remote > last_modified_local;
 
-    return Ok(last_modified_remote > last_modified_local);
+    info!(
+        "was_content_modified_since_last_check() \
+        last_modified_remote: {}, \
+        last_modified_local: {}, \
+        content_was_modified: {}",
+        last_modified_remote,
+        last_modified_local,
+        content_was_modified
+    );
+
+    return Ok(content_was_modified);
 }
 
 async fn process_posts(
@@ -405,7 +416,7 @@ async fn process_posts(
     chan_thread: &ChanThread,
     database: &Arc<Database>
 ) -> anyhow::Result<()> {
-    debug!("process_posts({}) start", thread_descriptor);
+    info!("process_posts({}) start", thread_descriptor);
 
     if chan_thread.posts.is_empty() {
         info!("process_posts({}) no posts to process", thread_descriptor);
@@ -426,13 +437,13 @@ async fn process_posts(
     ).await?;
 
     if last_processed_post.is_some() {
-        debug!(
+        info!(
             "process_posts({}) last_processed_post: {}",
             thread_descriptor,
             last_processed_post.clone().unwrap()
         );
     } else {
-        debug!(
+        info!(
             "process_posts({}) last_processed_post: None",
             thread_descriptor,
         );
@@ -495,7 +506,7 @@ async fn process_posts(
         }
     }
 
-    debug!("process_posts({}) new_posts_count: {}", thread_descriptor, new_posts_count);
+    info!("process_posts({}) new_posts_count: {}", thread_descriptor, new_posts_count);
 
     let last_post = chan_thread.posts.last();
     if last_post.is_none() {
@@ -510,7 +521,7 @@ async fn process_posts(
         last_post.post_sub_no.unwrap_or(0)
     );
 
-    debug!(
+    info!(
         "process_posts({}) storing {} as last_processed_post",
         thread_descriptor,
         last_post_descriptor
@@ -522,19 +533,43 @@ async fn process_posts(
     ).await?;
 
     if found_post_replies_set.is_empty() {
-        debug!("process_posts({}) end. No post replies found", thread_descriptor);
+        info!("process_posts({}) end. No post replies found", thread_descriptor);
         return Ok(());
     }
 
-    debug!("process_posts({}) found {} quotes", thread_descriptor, found_post_replies_set.len());
+    info!("process_posts({}) found {} quotes", thread_descriptor, found_post_replies_set.len());
+
     let found_post_replies = found_post_replies_set.iter().collect::<Vec<&FoundPostReply>>();
 
     let post_descriptor_db_ids = post_descriptor_id_repository::get_many_post_descriptor_db_ids(
         &found_post_replies
     ).await;
 
+    // TODO: remove me !!!!!!!!!!!!
+    for found_post_reply in &found_post_replies {
+        info!(
+            "process_posts({}) origin: {}, replies_to: {}",
+            thread_descriptor,
+            found_post_reply.origin.post_no,
+            found_post_reply.replies_to.post_no
+        );
+    }
+
+    for (post_db_id, found_post_replies) in post_descriptor_db_ids.iter() {
+        for found_post_reply in found_post_replies {
+            info!(
+                "process_posts({}) post_db_id: {}, origin: {}, replies_to: {}",
+                thread_descriptor,
+                post_db_id,
+                found_post_reply.origin.post_no,
+                found_post_reply.replies_to.post_no
+            );
+        }
+    }
+    // TODO: remove me !!!!!!!!!!!!
+
     if post_descriptor_db_ids.is_empty() {
-        debug!("process_posts({}) end. No reply db_ids found", thread_descriptor);
+        info!("process_posts({}) end. No reply db_ids found", thread_descriptor);
         return Ok(());
     }
 
@@ -545,18 +580,29 @@ async fn process_posts(
     ).await?;
 
     if post_replies.len() > 0 {
-        debug!(
+        info!(
             "process_posts({}) storing {} post replies into the database",
             thread_descriptor,
             post_replies.len()
         );
+
+        // TODO: remove me !!!!!!!!!!!!
+        for post_reply in &post_replies {
+            info!(
+                "process_posts({}) owner_post_descriptor_id: {}, owner_account_id: {}",
+                thread_descriptor,
+                post_reply.owner_post_descriptor_id,
+                post_reply.owner_account_id,
+            );
+        }
+        // TODO: remove me !!!!!!!!!!!!
 
         post_reply_repository::store(&post_replies, &post_descriptor_db_ids, database)
             .await
             .context(format!("Failed to store post {} replies", post_replies.len()))?;
     }
 
-    debug!("process_posts({}) end. Success!", thread_descriptor);
+    info!("process_posts({}) end. Success!", thread_descriptor);
     return Ok(());
 }
 
@@ -572,11 +618,13 @@ fn post_descriptor_db_ids_to_vec_of_unique_keys(
     let mut result_vec = Vec::<i64>::with_capacity(capacity);
 
     for key in post_descriptor_db_ids.keys() {
-        if !duplicates.insert(*key) {
+        let post_descriptor_db_id = *key;
+
+        if !duplicates.insert(post_descriptor_db_id) {
             continue;
         }
 
-        result_vec.push(*key);
+        result_vec.push(post_descriptor_db_id);
     }
 
     return result_vec;

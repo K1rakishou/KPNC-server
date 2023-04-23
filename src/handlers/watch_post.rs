@@ -73,7 +73,7 @@ pub async fn handle(
     }
 
     let post_descriptor = post_descriptor.unwrap();
-    debug!("watch_post() post_descriptor: {}", post_descriptor);
+    info!("watch_post() post_descriptor: {}", post_descriptor);
 
     let post_watch_created_result = post_repository::start_watching_post(
         database,

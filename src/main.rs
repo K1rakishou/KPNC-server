@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let firebase_api_key = env::var("FIREBASE_API_KEY")
         .context("Failed to read FIREBASE_API_KEY from Environment")?;
 
-    init_logger(is_dev_build);
+    init_logger();
 
     info!("main() initializing the server");
 
@@ -127,14 +127,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-pub fn init_logger(is_dev_build: bool) {
-    let level_filter = if is_dev_build {
-        LevelFilter::Debug
-    } else {
-        LevelFilter::Info
-    };
-
+pub fn init_logger() {
     env_logger::builder()
-        .filter_level(level_filter)
+        .filter_level(LevelFilter::Info)
         .init();
 }

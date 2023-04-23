@@ -79,7 +79,7 @@ pub async fn store(
         );
 
         // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
-        debug!(
+        info!(
             "owner_account_id: {}, owner_post_descriptor_id: {}",
             post_reply.owner_account_id,
             post_reply.owner_post_descriptor_id
@@ -93,7 +93,7 @@ pub async fn store(
 
         for post_descriptor_to_insert in post_descriptors_to_insert {
             // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
-            debug!(
+            info!(
                 "origin.post_no: {}, reply_to.post_no: {}",
                 post_descriptor_to_insert.origin.post_no,
                 post_descriptor_to_insert.replies_to.post_no
@@ -112,7 +112,7 @@ pub async fn store(
 
         for (post_descriptor, post_descriptor_db_id) in &pd_to_db_id_map {
             // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
-            debug!(
+            info!(
                 "post_descriptor.post_no: {}, post_descriptor_db_id: {}",
                 post_descriptor.post_no,
                 post_descriptor_db_id

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -141,12 +142,13 @@ pub async fn get_all_watched_threads(
         return Ok(vec![]);
     }
 
-    let mut thread_descriptors = Vec::with_capacity(post_descriptors.len());
+    let mut thread_descriptors_set = HashSet::with_capacity(post_descriptors.len());
 
     for post_descriptor in post_descriptors {
-        thread_descriptors.push(post_descriptor.thread_descriptor);
+        thread_descriptors_set.insert(post_descriptor.thread_descriptor);
     }
 
+    let thread_descriptors = thread_descriptors_set.into_iter().collect::<Vec<ThreadDescriptor>>();
     return Ok(thread_descriptors);
 }
 
@@ -189,6 +191,9 @@ pub async fn find_new_replies(
     database: &Arc<Database>,
     post_descriptor_db_ids: &Vec<i64>
 ) -> anyhow::Result<Vec<PostReply>> {
+    // TODO: remove me!!!
+    info!("find_new_replies({}) post_descriptor_db_ids: {}", thread_descriptor, post_descriptor_db_ids.len());
+
     let query_start = r#"
         SELECT
             posts.owner_post_descriptor_id,
@@ -212,15 +217,23 @@ pub async fn find_new_replies(
         post_descriptor_db_ids.len()
     ).string()?;
 
+    // TODO: remove me!!!
+    info!("find_new_replies({}) {}", thread_descriptor, query);
+    // TODO: remove me!!!
+    info!("find_new_replies({}) {:?}", thread_descriptor, post_descriptor_db_ids);
+
     let connection = database.connection().await?;
     let statement = connection.prepare(query.as_str()).await?;
     let query_params = db_helpers::to_db_params::<i64>(&post_descriptor_db_ids);
 
     let rows = connection.query(&statement, &query_params[..]).await?;
     if rows.is_empty() {
-        debug!("process_posts({}) end. No posts found related to post watchers", thread_descriptor);
+        info!("process_posts({}) end. No posts found related to post watchers", thread_descriptor);
         return Ok(vec![]);
     }
+
+    // TODO: remove me!!!
+    info!("find_new_replies({}) found rows: {}", thread_descriptor, rows.len());
 
     let mut post_replies = Vec::<PostReply>::with_capacity(rows.len());
 

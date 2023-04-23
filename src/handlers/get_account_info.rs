@@ -66,7 +66,7 @@ pub async fn handle(
     let account = account.unwrap();
 
     let account_info_response = AccountInfoResponse {
-        is_valid: is_account_valid(&account.valid_until),
+        is_valid: account.is_valid(),
         valid_until: account.valid_until
     };
 
@@ -77,13 +77,4 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     return Ok(response);
-}
-
-fn is_account_valid(valid_until: &Option<DateTime<Utc>>) -> bool {
-    if valid_until.is_none() {
-        return false;
-    }
-
-    let valid_until = valid_until.unwrap();
-    return valid_until > chrono::offset::Utc::now();
 }

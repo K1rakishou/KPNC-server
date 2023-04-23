@@ -178,11 +178,11 @@ impl Imageboard for Dvach {
         let dvach_thread = dvach_thread.unwrap();
         let mut chan_posts = Vec::<ChanPost>::with_capacity(dvach_thread.posts.len());
 
-        for chan4_post in &dvach_thread.posts {
+        for (index, chan4_post) in dvach_thread.posts.iter().enumerate() {
             let chan_post = ChanPost {
                 post_no: chan4_post.num,
                 post_sub_no: None,
-                is_op: chan4_post.op == 1,
+                is_op: index == 0,
                 closed: chan4_post.closed.unwrap_or(0) == 1,
                 archived: false,
                 comment_unparsed: chan4_post.comment.clone()
