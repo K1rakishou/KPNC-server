@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::init_logger;
+use crate::{info, init_logger};
 use crate::model::repository::{account_repository, migrations_repository, post_descriptor_id_repository};
 use crate::tests::shared::{database_shared, server_shared, site_repository_shared};
 
@@ -31,7 +31,7 @@ pub async fn run_test(tests: Vec<TestCase>) {
 }
 
 async fn test_ctor() {
-    init_logger();
+    init_logger(None);
     info!("test_ctor start");
 
     database_shared::ctor().await;

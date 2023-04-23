@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use tokio::sync::{RwLock, RwLockWriteGuard};
 use tokio_postgres::Transaction;
 
+use crate::info;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::service::thread_watcher::FoundPostReply;

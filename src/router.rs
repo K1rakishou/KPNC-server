@@ -5,7 +5,7 @@ use http_body_util::Full;
 use hyper::{Request, Response};
 use hyper::body::Bytes;
 
-use crate::handlers;
+use crate::{error, handlers, info};
 use crate::handlers::shared::ContentType;
 use crate::helpers::throttler;
 use crate::model::database::db::Database;
@@ -84,7 +84,7 @@ pub async fn router(
             .map(|err| err.to_string())
             .unwrap_or(String::from("Unknown error"));
 
-        log::error!("router() Request to {} error: {:?}", path, handler_error);
+        error!("router() Request to {} error: {:?}", path, handler_error);
 
         let response_json = handlers::shared::error_response_string(&handler_error_message)?;
         let response = Response::builder()

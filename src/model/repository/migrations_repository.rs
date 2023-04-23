@@ -7,6 +7,7 @@ use refinery::Migration;
 use tokio_postgres::{Row, Transaction};
 
 use crate::helpers::hashers::Sha512Hashable;
+use crate::info;
 use crate::model::database::db::{Database, PgPooledConnection};
 
 mod embedded {

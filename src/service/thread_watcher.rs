@@ -11,6 +11,7 @@ use reqwest::Client;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
+use crate::{error, info};
 use crate::helpers::post_helpers;
 use crate::model::data::chan::{ChanThread, PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
@@ -153,14 +154,20 @@ async fn process_watched_threads(
 
     let delta = chrono::offset::Utc::now() - process_threads_start;
     let send_fcm_messages_start = chrono::offset::Utc::now();
-    info!("process_watched_threads() processing done, took {} ms, sending out FCM messages...", delta.num_milliseconds());
+    info!(
+        "process_watched_threads() processing done, took {} ms, sending out FCM messages...",
+        delta.num_milliseconds()
+    );
 
     fcm_sender.send_fcm_messages(chunk_size)
         .await
         .context("Error while trying to send out FCM messages")?;
 
     let delta = chrono::offset::Utc::now() - send_fcm_messages_start;
-    info!("process_watched_threads() sending out FCM messages done, took {} ms, success!", delta.num_milliseconds());
+    info!(
+        "process_watched_threads() sending out FCM messages done, took {} ms, success!",
+        delta.num_milliseconds()
+    );
 
     return Ok(all_watched_threads.len());
 }

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use tokio_postgres::Row;
 
+use crate::{error, info};
 use crate::helpers::db_helpers;
 use crate::model::data::chan::PostDescriptor;
 use crate::model::database::db::Database;

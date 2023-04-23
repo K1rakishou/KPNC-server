@@ -5,6 +5,7 @@ use std::time::Duration;
 use lazy_static::lazy_static;
 use tokio::sync::RwLock;
 
+use crate::{info, warn};
 use crate::router::TestContext;
 
 lazy_static! {

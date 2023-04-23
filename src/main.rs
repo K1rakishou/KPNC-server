@@ -1,8 +1,6 @@
 #![feature(once_cell)]
 #![feature(async_closure)]
-
-#[macro_use]
-extern crate log;
+#![feature(thread_id_value)]
 
 use std::env;
 use std::net::SocketAddr;
@@ -10,12 +8,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::Context;
+use chrono::{DateTime, Local, Offset, Utc};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use log::LevelFilter;
 use tokio::net::TcpListener;
 
-use crate::helpers::throttler;
+use crate::helpers::{logger, throttler};
 use crate::model::database::db::Database;
 use crate::model::repository::migrations_repository::perform_migrations;
 use crate::model::repository::post_descriptor_id_repository;
@@ -48,17 +46,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let firebase_api_key = env::var("FIREBASE_API_KEY")
         .context("Failed to read FIREBASE_API_KEY from Environment")?;
 
-    init_logger();
-
-    info!("main() initializing the server");
-
     let num_cpus = num_cpus::get() as u32;
-    info!("main() detected cpu cores: {}", num_cpus);
-
-    info!("main() initializing database...");
     let database = Database::new(connection_string, num_cpus).await?;
     let database = Arc::new(database);
-    info!("main() initializing database... done");
+    init_logger(Some(database.clone()));
+
+    info!("main() initializing the server");
+    info!("main() detected cpu cores: {}", num_cpus);
 
     info!("main() processing migrations...");
     perform_migrations(&database).await?;
@@ -127,8 +121,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-pub fn init_logger() {
-    env_logger::builder()
-        .filter_level(LevelFilter::Info)
-        .init();
+pub fn init_logger(database: Option<Arc<Database>>) {
+    logger::init_logger(database);
 }

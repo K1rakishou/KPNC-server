@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use tokio::sync::RwLock;
 use tokio_postgres::Row;
 
-use crate::constants;
+use crate::{constants, info, warn};
 use crate::helpers::hashers::Sha512Hashable;
 use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;

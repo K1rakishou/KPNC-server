@@ -5,6 +5,7 @@ use anyhow::Context;
 
 use crate::helpers::db_helpers;
 use crate::helpers::string_helpers::FormatToken;
+use crate::info;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::{account_repository, post_descriptor_id_repository};
