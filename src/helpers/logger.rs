@@ -1,10 +1,11 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{Datelike, DateTime, Local, Timelike, TimeZone, Utc};
-use fcm::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::Mutex;
 
 use crate::model::database::db::Database;
 
@@ -37,8 +38,14 @@ impl Logger {
         database: Option<Arc<Database>>,
         mut receiver: UnboundedReceiver<LogLine>
     ) -> ! {
-        let mut unsent_logs = Vec::<LogLine>::with_capacity(128);
-        let mut last_time_execution = Utc::now();
+        let unsent_logs = Arc::new(Mutex::new(Vec::<LogLine>::with_capacity(128)));
+
+        let database_cloned = database.clone();
+        let unsent_logs_cloned = unsent_logs.clone();
+
+        tokio::spawn(async move {
+            Self::store_logs_in_database(&database_cloned, unsent_logs_cloned).await
+        });
 
         loop {
             let log_line = receiver.recv().await;
@@ -71,29 +78,50 @@ impl Logger {
 
             println!("{}", formatted_log);
 
-            let database_cloned = database.clone();
-            if database_cloned.is_none() {
+            {
+                unsent_logs.lock().await.push(log_line);
+            }
+        }
+    }
+
+    async fn store_logs_in_database(
+        database_cloned: &Option<Arc<Database>>,
+        unsent_logs_cloned: Arc<Mutex<Vec<LogLine>>>
+    ) {
+        if database_cloned.is_none() {
+            println!("Database was not passed into the logger, exiting store_logs_in_database()");
+            return;
+        }
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+
+            let unsent_logs_copy = {
+                let mut unsent_logs_locked = unsent_logs_cloned.lock().await;
+                let unsent_logs_copy = unsent_logs_locked.iter()
+                    .map(|value| value.clone())
+                    .collect::<Vec<LogLine>>();
+
+                unsent_logs_locked.clear();
+                unsent_logs_copy
+            };
+
+            if unsent_logs_copy.is_empty() {
                 continue;
             }
 
-            unsent_logs.push(log_line);
+            println!("Got {} new logs to insert into the database", unsent_logs_copy.len());
 
-            let now = Utc::now();
-            if now - last_time_execution > Duration::seconds(5) {
-                let result = Self::store_logs_into_database(
-                    &database_cloned.unwrap().clone(),
-                    &unsent_logs
-                ).await;
+            let result = Self::store_logs_into_database(
+                &database_cloned.as_ref().unwrap().clone(),
+                &unsent_logs_copy
+            ).await;
 
-                if result.is_err() {
-                    let error = result.err().unwrap();
-                    println!("Failed to store logs in the database, error: {}", error);
-                } else {
-                    println!("Inserted {} logs into database", unsent_logs.len());
-                }
-
-                unsent_logs.clear();
-                last_time_execution = now;
+            if result.is_err() {
+                let error = result.err().unwrap();
+                println!("Failed to store logs in the database, error: {}", error);
+            } else {
+                println!("Inserted {} logs into database", unsent_logs_copy.len());
             }
         }
     }
