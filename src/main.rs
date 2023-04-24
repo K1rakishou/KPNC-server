@@ -8,7 +8,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::Context;
-use chrono::{DateTime, Local, Offset, Utc};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use tokio::net::TcpListener;
@@ -45,6 +44,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .context("Failed to read DATABASE_CONNECTION_STRING")?;
     let firebase_api_key = env::var("FIREBASE_API_KEY")
         .context("Failed to read FIREBASE_API_KEY from Environment")?;
+    let master_password = env::var("MASTER_PASSWORD")
+        .context("Failed to read MASTER_PASSWORD from Environment")?;
 
     let num_cpus = num_cpus::get() as u32;
     let database = Database::new(connection_string, num_cpus).await?;
@@ -59,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("main() processing migrations... done");
 
     info!("main() starting up server...");
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     let listener = TcpListener::bind(addr).await?;
 
     let site_repository = Arc::new(SiteRepository::new());
@@ -98,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let (stream, sock_addr) = listener.accept().await?;
         let database_cloned_for_router = database.clone();
         let site_repository_cloned = site_repository.clone();
+        let master_password_cloned = master_password.clone();
 
         tokio::task::spawn(async move {
             http1::Builder::new()
@@ -108,6 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                         return router(
                             test_context,
+                            &master_password_cloned,
                             &sock_addr,
                             request,
                             &database_cloned_for_router,

@@ -17,6 +17,7 @@ pub struct TestContext {
 
 pub async fn router(
     test_context: Option<TestContext>,
+    master_password: &String,
     sock_addr: &SocketAddr,
     request: Request<hyper::body::Incoming>,
     database: &Arc<Database>,
@@ -24,6 +25,10 @@ pub async fn router(
 ) -> anyhow::Result<Response<Full<Bytes>>> {
     let remote_address = sock_addr.to_string();
     let (parts, body) = request.into_parts();
+
+    let master_password_from_request = parts.headers.get("X-Master-Password")
+        .map(|header_value| header_value.to_str().unwrap_or(""))
+        .unwrap_or("");
 
     let path_and_query = parts.uri.path_and_query();
     if path_and_query.is_none() {
@@ -63,6 +68,30 @@ pub async fn router(
 
     let start = chrono::offset::Utc::now();
     let query = path_and_query.query().unwrap_or("");
+
+    match path {
+        "create_account" => {
+            if master_password.to_lowercase() != master_password_from_request.to_lowercase() {
+                info!(
+                    "router() Client {} sent incorrect master password: {}",
+                    remote_address,
+                    master_password_from_request
+                );
+
+                let error_message = "Incorrect master password";
+                let response_json = handlers::shared::error_response_str(error_message)?;
+                let response = Response::builder()
+                    .json()
+                    .status(403)
+                    .body(Full::new(Bytes::from(response_json)))?;
+
+                return Ok(response);
+            }
+        },
+        _ => {
+            // no-op
+        }
+    };
 
     // Do not forget to update throttler as well when changing paths here.
     let handler_result = match path {
