@@ -88,6 +88,12 @@ pub enum CreateAccountResult {
 }
 
 #[derive(Eq, PartialEq)]
+pub enum UpdateAccountExpiryDateResult {
+    Ok,
+    AccountDoesNotExist
+}
+
+#[derive(Eq, PartialEq)]
 pub enum UpdateFirebaseTokenResult {
     Ok,
     AccountDoesNotExist
@@ -268,8 +274,8 @@ pub async fn create_account(
 ) -> anyhow::Result<CreateAccountResult> {
     let existing_account = get_account(account_id, database).await?;
     if existing_account.is_some() {
-        warn!("create_account() account with id: {} already exists!", account_id);
-        return Ok(CreateAccountResult::AccountAlreadyExists);
+        warn!("create_account() account with id: {} already exists!", account_id.format_token());
+        return Err(anyhow!("Account {} already exists!", account_id));
     }
 
     let query = r#"
@@ -318,6 +324,11 @@ pub async fn update_firebase_token(
 ) -> anyhow::Result<UpdateFirebaseTokenResult> {
     let existing_account = get_account(account_id, database).await?;
     if existing_account.is_none() {
+        warn!(
+            "update_firebase_token() account with id: {} does not exist!",
+            account_id.format_token()
+        );
+
         return Ok(UpdateFirebaseTokenResult::AccountDoesNotExist);
     }
 
@@ -327,7 +338,7 @@ pub async fn update_firebase_token(
             firebase_token = $1
         WHERE
             account_id = $2
-"#;
+    "#;
 
     let connection = database.connection().await?;
     let statement = connection.prepare(query).await?;
@@ -353,11 +364,65 @@ pub async fn update_firebase_token(
 
     info!(
         "update_account() success. account_id: {}, firebase_token: {}",
-        account_id,
+        account_id.format_token(),
         firebase_token.format_token()
     );
 
     return Ok(UpdateFirebaseTokenResult::Ok);
+}
+
+pub async fn update_account_expiry_date(
+    database: &Arc<Database>,
+    account_id: &AccountId,
+    valid_until: &DateTime<Utc>
+) -> anyhow::Result<UpdateAccountExpiryDateResult> {
+    let existing_account = get_account(account_id, database).await?;
+    if existing_account.is_none() {
+        warn!(
+            "update_account_expiry_date() account with id: {} does not exist!",
+            account_id.format_token()
+        );
+
+        return Ok(UpdateAccountExpiryDateResult::AccountDoesNotExist);
+    }
+
+    let query = r#"
+        UPDATE accounts
+        SET
+            valid_until = $1
+        WHERE
+            account_id = $2
+    "#;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query).await?;
+
+    connection.execute(
+        &statement,
+        &[&valid_until, &account_id.id]
+    )
+        .await
+        .context("update_account_expiry_date() Failed to update valid_until in the database")?;
+
+    {
+        let mut accounts_locked = ACCOUNTS_CACHE.write().await;
+
+        let existing_account = accounts_locked.get_mut(account_id);
+        if existing_account.is_some() {
+            let mut existing_account = existing_account.unwrap();
+            existing_account.valid_until = Some(valid_until.clone());
+        } else {
+            return Err(anyhow!("Account {} does not exist!", account_id));
+        }
+    }
+
+    info!(
+        "update_account_expiry_date() success. account_id: {}, valid_until: {}",
+        account_id.format_token(),
+        valid_until
+    );
+
+    return Ok(UpdateAccountExpiryDateResult::Ok);
 }
 
 pub async fn test_get_account_from_cache(

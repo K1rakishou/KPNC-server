@@ -70,7 +70,8 @@ pub async fn router(
     let query = path_and_query.query().unwrap_or("");
 
     match path {
-        "create_account" => {
+        "create_account" |
+        "update_account_expiry_date" => {
             if master_password.to_lowercase() != master_password_from_request.to_lowercase() {
                 info!(
                     "router() Client {} sent incorrect master password: {}",
@@ -95,11 +96,24 @@ pub async fn router(
 
     // Do not forget to update throttler as well when changing paths here.
     let handler_result = match path {
-        "create_account" => handlers::create_account::handle(query, body, database).await,
-        "update_firebase_token" => handlers::update_firebase_token::handle(query, body, database).await,
-        "get_account_info" => handlers::get_account_info::handle(query, body, database).await,
-        "watch_post" => handlers::watch_post::handle(query, body, database, site_repository).await,
-        _ => handlers::index::handle(query, body).await
+        "create_account" => {
+            handlers::create_account::handle(query, body, database).await
+        },
+        "update_account_expiry_date" => {
+            handlers::update_account_expiry_date::handle(query, body, database).await
+        },
+        "update_firebase_token" => {
+            handlers::update_firebase_token::handle(query, body, database).await
+        },
+        "get_account_info" => {
+            handlers::get_account_info::handle(query, body, database).await
+        },
+        "watch_post" => {
+            handlers::watch_post::handle(query, body, database, site_repository).await
+        },
+        _ => {
+            handlers::index::handle(query, body).await
+        }
     };
 
     let delta = chrono::offset::Utc::now() - start;

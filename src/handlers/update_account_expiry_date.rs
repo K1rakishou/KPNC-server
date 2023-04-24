@@ -10,11 +10,11 @@ use crate::{error, info};
 use crate::handlers::shared::{ContentType, empty_success_response, error_response_str};
 use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
-use crate::model::repository::account_repository::{AccountId, CreateAccountResult};
 use crate::model::repository::account_repository;
+use crate::model::repository::account_repository::{AccountId, UpdateAccountExpiryDateResult};
 
 #[derive(Serialize, Deserialize)]
-pub struct CreateNewAccountRequest {
+pub struct UpdateAccountExpiryDateRequest {
     pub user_id: String,
     pub valid_for_days: u64
 }
@@ -32,14 +32,14 @@ pub async fn handle(
     let body_as_string = String::from_utf8(body_bytes.to_vec())
         .context("Failed to convert body into a string")?;
 
-    let request: CreateNewAccountRequest = serde_json::from_str(body_as_string.as_str())
-        .context("Failed to convert body into CreateNewAccountRequest")?;
+    let request: UpdateAccountExpiryDateRequest = serde_json::from_str(body_as_string.as_str())
+        .context("Failed to convert body into UpdateAccountExpiryDateRequest")?;
 
     let account_id = AccountId::from_user_id(&request.user_id)?;
     let valid_for_days = request.valid_for_days as i64;
 
     if valid_for_days <= 0 || valid_for_days > 365 {
-        error!("create_account() bad valid_for_days: {}", valid_for_days);
+        error!("update_account_expiry_date() bad valid_for_days: {}", valid_for_days);
 
         let response_json = error_response_str("valid_for_days must be in range 0..365")?;
         let response = Response::builder()
@@ -52,25 +52,34 @@ pub async fn handle(
 
     let valid_until = chrono::offset::Utc::now() + chrono::Duration::days(valid_for_days);
 
-    let result = account_repository::create_account(database, &account_id, Some(&valid_until))
+    let result = account_repository::update_account_expiry_date(
+        database,
+        &account_id,
+        &valid_until
+    )
         .await
-        .context(format!("Failed to created account for account with account_id: \'{}\'", account_id))?;
+        .with_context(|| {
+            return format!(
+                "Failed to update account expiry date for account with account_id: \'{}\'",
+                account_id
+            );
+        })?;
 
-    if result != CreateAccountResult::Ok {
+    if result != UpdateAccountExpiryDateResult::Ok {
         let error_message = match result {
-            CreateAccountResult::Ok => unreachable!(),
-            CreateAccountResult::AccountAlreadyExists => "Account already exists"
+            UpdateAccountExpiryDateResult::Ok => unreachable!(),
+            UpdateAccountExpiryDateResult::AccountDoesNotExist => "Account does not exist"
         };
 
         let full_error_message = format!(
-            "Failed to create a new account for account_id \'{}\': \"{}\"",
+            "Failed to update account expiry date for account_id \'{}\': \"{}\"",
             account_id,
             error_message
         );
 
-        error!("create_account() {}", full_error_message);
+        error!("update_account_expiry_date() {}", full_error_message);
 
-        let response_json = error_response_str("Account already exists")?;
+        let response_json = error_response_str("Account does not exist")?;
         let response = Response::builder()
             .json()
             .status(200)
@@ -87,7 +96,8 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     info!(
-        "create_account() Successfully created new account. account_id: \'{}\', valid_until: {:?}",
+        "update_account_expiry_date() Successfully updated account expiry date. \
+        account_id: \'{}\', valid_until: {:?}",
         account_id.format_token(),
         valid_until
     );
