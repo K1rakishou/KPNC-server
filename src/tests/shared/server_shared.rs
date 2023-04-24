@@ -26,6 +26,7 @@ pub async fn ctor(
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = TcpListener::bind(addr).await.unwrap();
     SERVER_WORKING_FLAG.store(true, Ordering::SeqCst);
+    let master_password = "test123".to_string();
 
     let database_cloned_for_router = database.clone();
     let site_repository_cloned = site_repository.clone();
@@ -39,6 +40,7 @@ pub async fn ctor(
             let (stream, sock_addr) = listener.accept().await.unwrap();
             let database_cloned_for_router = database_cloned_for_router.clone();
             let site_repository_cloned = site_repository_cloned.clone();
+            let master_password_cloned = master_password.clone();
 
             tokio::task::spawn(async move {
                 http1::Builder::new()
@@ -50,6 +52,7 @@ pub async fn ctor(
 
                             return router(
                                 test_context,
+                                &master_password_cloned,
                                 &sock_addr,
                                 request,
                                 &database_cloned_for_router,

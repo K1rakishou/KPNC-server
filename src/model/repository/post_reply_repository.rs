@@ -79,27 +79,11 @@ pub async fn store(
             &post_reply.owner_post_descriptor_id
         );
 
-        // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
-        info!(
-            "owner_account_id: {}, owner_post_descriptor_id: {}",
-            post_reply.owner_account_id,
-            post_reply.owner_post_descriptor_id
-        );
-
         if post_descriptors_to_insert.is_none() {
             continue;
         }
 
         let post_descriptors_to_insert = post_descriptors_to_insert.unwrap();
-
-        for post_descriptor_to_insert in post_descriptors_to_insert {
-            // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
-            info!(
-                "origin.post_no: {}, reply_to.post_no: {}",
-                post_descriptor_to_insert.origin.post_no,
-                post_descriptor_to_insert.replies_to.post_no
-            );
-        }
 
         let post_descriptors_to_insert = post_descriptors_to_insert
             .iter()
@@ -110,15 +94,6 @@ pub async fn store(
             &post_descriptors_to_insert,
             &transaction
         ).await?;
-
-        for (post_descriptor, post_descriptor_db_id) in &pd_to_db_id_map {
-            // TODO: remove this once the bug with incorrect posts inserted into post_replies is fixed
-            info!(
-                "post_descriptor.post_no: {}, post_descriptor_db_id: {}",
-                post_descriptor.post_no,
-                post_descriptor_db_id
-            );
-        }
 
         let statement = transaction.prepare(query).await?;
 
@@ -227,19 +202,17 @@ pub async fn mark_post_replies_as_notified(
         return Ok(());
     }
 
-    let query_start = r#"
+    let query = r#"
         UPDATE post_replies
         SET notification_sent_on = now()
-        WHERE id_generated IN
-"#;
+        WHERE id_generated IN ({QUERY_PARAMS})
+    "#;
 
-    let query = db_helpers::format_query_params_string(
-        query_start,
-        "",
-        sent_post_reply_ids.len()
-    ).string()?;
-
-    let db_params = db_helpers::to_db_params(&sent_post_reply_ids);
+    let (query, db_params) = db_helpers::format_query_params(
+        query,
+        "{QUERY_PARAMS}",
+        &sent_post_reply_ids
+    )?;
 
     let connection = database.connection().await?;
     let statement = connection.prepare(&query).await?;

@@ -1,15 +1,29 @@
+use anyhow::anyhow;
 use tokio_postgres::types::ToSql;
 
-pub fn format_query_params_string(
-    query_start: &str,
-    query_end: &str,
-    params_count: usize
-) -> string_builder::Builder {
-    let total_length = query_start.len() + query_end.len() + (params_count * 10);
+pub fn format_query_params<'a, T : ToSql + Sync>(
+    query: &str,
+    key: &str,
+    params: &'a Vec<T>
+) -> anyhow::Result<(String, Vec<&'a (dyn ToSql + Sync)>)> {
+    if params.is_empty() {
+        return Err(anyhow!("params are empty!"))
+    }
+
+    let index_of_key = query.find(key);
+    if index_of_key.is_none() {
+        panic!("\'{}\' was not found in query", key);
+    }
+
+    let params_count = params.len();
+    let index_of_key = index_of_key.unwrap();
+
+    let query_start = &query[..index_of_key];
+    let query_end = &query[(index_of_key + key.len())..];
+    let total_length = query_start.len() + query_end.len() + (params_count * 4);
 
     let mut string_builder = string_builder::Builder::new(total_length);
     string_builder.append(query_start);
-    string_builder.append(" (");
 
     for index in 0..params_count {
         string_builder.append(format!("${}", index + 1));
@@ -18,15 +32,26 @@ pub fn format_query_params_string(
         }
     }
 
-    string_builder.append(")");
     string_builder.append(query_end);
 
-    return string_builder
-}
-
-pub fn to_db_params<T : ToSql + Sync>(params: &Vec<T>) -> Vec<&(dyn ToSql + Sync)> {
-    return params[..]
+    let db_params = params[..]
         .iter()
         .map(|param| param as &(dyn ToSql + Sync))
         .collect::<Vec<&(dyn ToSql + Sync)>>();
+
+    return Ok((string_builder.string()?, db_params));
+}
+
+#[test]
+fn test_format_query_params_string() {
+    let query = "SELECT * FROM test WHERE test.id IN ({QUERY_PARAMS})";
+    let params = vec![1, 2, 3, 4, 5];
+    let (query, db_params) = format_query_params(
+        query,
+        "{QUERY_PARAMS}",
+        &params
+    ).unwrap();
+
+    assert_eq!("SELECT * FROM test WHERE test.id IN ($1, $2, $3, $4, $5)", query);
+    assert_eq!(5, db_params.len());
 }

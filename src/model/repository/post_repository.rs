@@ -164,19 +164,17 @@ pub async fn mark_all_thread_posts_dead(
     let query = r#"
         UPDATE posts
         SET is_dead = TRUE
-        WHERE posts.owner_post_descriptor_id IN
-"#;
+        WHERE posts.owner_post_descriptor_id IN ({QUERY_PARAMS})
+    "#;
 
-    let query_with_params = db_helpers::format_query_params_string(
+    let (query, query_params) = db_helpers::format_query_params(
         query,
-        "",
-        thread_post_db_ids.len()
-    ).string()?;
-
-    let query_params = db_helpers::to_db_params::<i64>(&thread_post_db_ids);
+        "{QUERY_PARAMS}",
+        &thread_post_db_ids
+    )?;
 
     let connection = database.connection().await?;
-    let statement = connection.prepare(query_with_params.as_str()).await?;
+    let statement = connection.prepare(query.as_str()).await?;
 
     connection.execute(&statement, &query_params[..])
         .await
@@ -192,7 +190,7 @@ pub async fn find_new_replies(
     database: &Arc<Database>,
     post_descriptor_db_ids: &Vec<i64>
 ) -> anyhow::Result<Vec<PostReply>> {
-    let query_start = r#"
+    let query = r#"
         SELECT
             posts.owner_post_descriptor_id,
             account.id_generated
@@ -202,25 +200,21 @@ pub async fn find_new_replies(
             LEFT JOIN post_descriptors pd on pd.id_generated = posts.owner_post_descriptor_id
             LEFT JOIN post_replies post_reply on pd.id_generated = post_reply.owner_post_descriptor_id
         WHERE
-            posts.owner_post_descriptor_id IN
-    "#;
-
-    let query_end = r#"
+            posts.owner_post_descriptor_id IN ({QUERY_PARAMS})
         AND
             (post_reply IS NULL OR post_reply.notification_sent_on IS NULL)
         AND
             post_reply.deleted_on IS NULL
     "#;
 
-    let query = db_helpers::format_query_params_string(
-        query_start,
-        query_end,
-        post_descriptor_db_ids.len()
-    ).string()?;
+    let (query, query_params) = db_helpers::format_query_params(
+        query,
+        "{QUERY_PARAMS}",
+        &post_descriptor_db_ids
+    )?;
 
     let connection = database.connection().await?;
     let statement = connection.prepare(query.as_str()).await?;
-    let query_params = db_helpers::to_db_params::<i64>(&post_descriptor_db_ids);
 
     let rows = connection.query(&statement, &query_params[..]).await?;
     if rows.is_empty() {
