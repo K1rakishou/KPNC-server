@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let num_cpus = num_cpus::get() as u32;
     let database = Database::new(connection_string, num_cpus).await?;
     let database = Arc::new(database);
-    init_logger(Some(database.clone()));
+    init_logger(is_dev_build, Some(database.clone()));
 
     info!("main() initializing the server");
     info!("main() detected cpu cores: {}", num_cpus);
@@ -124,6 +124,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-pub fn init_logger(database: Option<Arc<Database>>) {
-    logger::init_logger(database);
+pub fn init_logger(is_dev_build: bool, database: Option<Arc<Database>>) {
+    logger::init_logger(is_dev_build, database);
 }

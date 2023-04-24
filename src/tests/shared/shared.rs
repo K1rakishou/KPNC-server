@@ -31,7 +31,7 @@ pub async fn run_test(tests: Vec<TestCase>) {
 }
 
 async fn test_ctor() {
-    init_logger(None);
+    init_logger(true, None);
     info!("test_ctor start");
 
     database_shared::ctor().await;

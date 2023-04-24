@@ -10,13 +10,14 @@ use tokio::sync::Mutex;
 use crate::model::database::db::Database;
 
 pub struct Logger {
+    is_dev_build: bool,
     sender: UnboundedSender<LogLine>
 }
 
 static mut LOGGER: Option<Logger> = None;
 
-pub fn init_logger(database: Option<Arc<Database>>) {
-    unsafe { LOGGER = Some(Logger::new(database)); }
+pub fn init_logger(is_dev_build: bool, database: Option<Arc<Database>>) {
+    unsafe { LOGGER = Some(Logger::new(is_dev_build, database)); }
 }
 
 fn logger() -> &'static Logger {
@@ -24,17 +25,18 @@ fn logger() -> &'static Logger {
 }
 
 impl Logger {
-    pub fn new(database: Option<Arc<Database>>) -> Logger {
+    pub fn new(is_dev_build: bool, database: Option<Arc<Database>>) -> Logger {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<LogLine>();
 
         tokio::spawn(async move {
-            Self::process_logs(database, receiver).await;
+            Self::process_logs(is_dev_build, database, receiver).await;
         });
 
-        return Self { sender };
+        return Self { is_dev_build, sender };
     }
 
     async fn process_logs(
+        is_dev_build: bool,
         database: Option<Arc<Database>>,
         mut receiver: UnboundedReceiver<LogLine>
     ) -> ! {
@@ -54,29 +56,38 @@ impl Logger {
             }
 
             let log_line = log_line.unwrap();
-            let local_time: DateTime<Local> = DateTime::from(log_line.date_time);
 
-            let date_time = format!(
-                "{}-{:02}-{:02} {:02}-{:02}-{:02}.{:03}",
-                local_time.year(),
-                local_time.month(),
-                local_time.day(),
-                local_time.hour(),
-                local_time.minute(),
-                local_time.second(),
-                local_time.timestamp_millis() % 1000,
-            );
+            // Only print logs to console when is_dev_build is true. In production version only
+            // store logs into the database since we won't be able to see them anyway.
+            if is_dev_build {
+                let local_time: DateTime<Local> = DateTime::from(log_line.date_time);
 
-            let formatted_log = format!(
-                "{} [{}] {}@{} -- {}",
-                log_line.log_level,
-                date_time,
-                log_line.target,
-                log_line.thread_id,
-                log_line.arguments
-            );
+                let date_time = format!(
+                    "{}-{:02}-{:02} {:02}-{:02}-{:02}.{:03}",
+                    local_time.year(),
+                    local_time.month(),
+                    local_time.day(),
+                    local_time.hour(),
+                    local_time.minute(),
+                    local_time.second(),
+                    local_time.timestamp_millis() % 1000,
+                );
 
-            println!("{}", formatted_log);
+                let formatted_log = format!(
+                    "{} [{}] {}@{} -- {}",
+                    log_line.log_level,
+                    date_time,
+                    log_line.target,
+                    log_line.thread_id,
+                    log_line.arguments
+                );
+
+                if log_line.log_level == LogLevel::Info {
+                    println!("{}", formatted_log);
+                } else {
+                    eprintln!("{}", formatted_log);
+                }
+            }
 
             {
                 unsent_logs.lock().await.push(log_line);
