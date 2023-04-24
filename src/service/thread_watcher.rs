@@ -405,10 +405,11 @@ async fn was_content_modified_since_last_check(
     let content_was_modified = last_modified_remote > last_modified_local;
 
     info!(
-        "was_content_modified_since_last_check() \
+        "was_content_modified_since_last_check({}) \
         last_modified_remote: {}, \
         last_modified_local: {}, \
         content_was_modified: {}",
+        thread_descriptor,
         last_modified_remote,
         last_modified_local,
         content_was_modified
@@ -552,29 +553,6 @@ async fn process_posts(
         &found_post_replies
     ).await;
 
-    // TODO: remove me !!!!!!!!!!!!
-    for found_post_reply in &found_post_replies {
-        info!(
-            "process_posts({}) origin: {}, replies_to: {}",
-            thread_descriptor,
-            found_post_reply.origin.post_no,
-            found_post_reply.replies_to.post_no
-        );
-    }
-
-    for (post_db_id, found_post_replies) in post_descriptor_db_ids.iter() {
-        for found_post_reply in found_post_replies {
-            info!(
-                "process_posts({}) post_db_id: {}, origin: {}, replies_to: {}",
-                thread_descriptor,
-                post_db_id,
-                found_post_reply.origin.post_no,
-                found_post_reply.replies_to.post_no
-            );
-        }
-    }
-    // TODO: remove me !!!!!!!!!!!!
-
     if post_descriptor_db_ids.is_empty() {
         info!("process_posts({}) end. No reply db_ids found", thread_descriptor);
         return Ok(());
@@ -592,17 +570,6 @@ async fn process_posts(
             thread_descriptor,
             post_replies.len()
         );
-
-        // TODO: remove me !!!!!!!!!!!!
-        for post_reply in &post_replies {
-            info!(
-                "process_posts({}) owner_post_descriptor_id: {}, owner_account_id: {}",
-                thread_descriptor,
-                post_reply.owner_post_descriptor_id,
-                post_reply.owner_account_id,
-            );
-        }
-        // TODO: remove me !!!!!!!!!!!!
 
         post_reply_repository::store(&post_replies, &post_descriptor_db_ids, database)
             .await

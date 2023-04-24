@@ -192,36 +192,31 @@ pub async fn find_new_replies(
     database: &Arc<Database>,
     post_descriptor_db_ids: &Vec<i64>
 ) -> anyhow::Result<Vec<PostReply>> {
-    // TODO: remove me!!!
-    info!("find_new_replies({}) post_descriptor_db_ids: {}", thread_descriptor, post_descriptor_db_ids.len());
-
     let query_start = r#"
         SELECT
             posts.owner_post_descriptor_id,
             account.id_generated
         FROM posts
-             LEFT JOIN post_watches watch on posts.id_generated = watch.owner_post_id
-             LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
-             LEFT JOIN post_replies post_reply on posts.id_generated = post_reply.owner_post_descriptor_id
+            LEFT JOIN post_watches watch on posts.id_generated = watch.owner_post_id
+            LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
+            LEFT JOIN post_descriptors pd on pd.id_generated = posts.owner_post_descriptor_id
+            LEFT JOIN post_replies post_reply on pd.id_generated = post_reply.owner_post_descriptor_id
         WHERE
-            posts.owner_post_descriptor_id IN "#;
+            posts.owner_post_descriptor_id IN
+    "#;
 
     let query_end = r#"
         AND
-            post_reply.notification_sent_on IS NULL
+            (post_reply IS NULL OR post_reply.notification_sent_on IS NULL)
         AND
-            post_reply.deleted_on IS NULL"#;
+            post_reply.deleted_on IS NULL
+    "#;
 
     let query = db_helpers::format_query_params_string(
         query_start,
         query_end,
         post_descriptor_db_ids.len()
     ).string()?;
-
-    // TODO: remove me!!!
-    info!("find_new_replies({}) {}", thread_descriptor, query);
-    // TODO: remove me!!!
-    info!("find_new_replies({}) {:?}", thread_descriptor, post_descriptor_db_ids);
 
     let connection = database.connection().await?;
     let statement = connection.prepare(query.as_str()).await?;
@@ -232,9 +227,6 @@ pub async fn find_new_replies(
         info!("process_posts({}) end. No posts found related to post watchers", thread_descriptor);
         return Ok(vec![]);
     }
-
-    // TODO: remove me!!!
-    info!("find_new_replies({}) found rows: {}", thread_descriptor, rows.len());
 
     let mut post_replies = Vec::<PostReply>::with_capacity(rows.len());
 
