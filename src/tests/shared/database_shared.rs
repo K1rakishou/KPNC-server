@@ -28,6 +28,7 @@ pub async fn ctor() {
             DROP TABLE IF EXISTS public.accounts;
             DROP TABLE IF EXISTS public.post_descriptors;
             DROP TABLE IF EXISTS public.threads;
+            DROP TABLE IF EXISTS public.logs;
         "#;
 
         connection.batch_execute(query).await.unwrap();
@@ -46,6 +47,7 @@ pub async fn cleanup() {
         DELETE FROM public.accounts;
         DELETE FROM public.post_descriptors;
         DELETE FROM public.threads;
+        DELETE FROM public.logs;
 
         ALTER SEQUENCE accounts_id_generated_seq RESTART;
         ALTER SEQUENCE post_descriptors_id_generated_seq RESTART;
@@ -53,6 +55,7 @@ pub async fn cleanup() {
         ALTER SEQUENCE post_watches_id_generated_seq RESTART;
         ALTER SEQUENCE posts_id_generated_seq RESTART;
         ALTER SEQUENCE threads_id_generated_seq RESTART;
+        ALTER SEQUENCE logs_id_seq RESTART;
     "#;
 
     connection.batch_execute(query).await.unwrap();

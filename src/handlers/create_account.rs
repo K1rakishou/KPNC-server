@@ -52,7 +52,7 @@ pub async fn handle(
 
     let valid_until = chrono::offset::Utc::now() + chrono::Duration::days(valid_for_days);
 
-    let result = account_repository::create_account(database, &account_id, Some(&valid_until))
+    let result = account_repository::create_account(database, &account_id, Some(valid_until))
         .await
         .context(format!("Failed to created account for account with account_id: \'{}\'", account_id))?;
 

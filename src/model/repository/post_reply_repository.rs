@@ -69,7 +69,7 @@ pub async fn store(
         )
         VALUES ($1, $2)
         ON CONFLICT (owner_account_id, owner_post_descriptor_id) DO NOTHING
-"#;
+    "#;
 
     let mut connection = database.connection().await?;
     let transaction = connection.transaction().await?;

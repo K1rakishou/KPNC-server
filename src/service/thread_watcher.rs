@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, FixedOffset};
 use lazy_static::lazy_static;
+use regex::Regex;
 use reqwest::Client;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -457,10 +458,108 @@ async fn process_posts(
         );
     }
 
-    let mut found_post_replies_set = HashSet::<FoundPostReply>::with_capacity(chan_thread.posts.len());
+    let mut found_post_replies_set =
+        HashSet::<FoundPostReply>::with_capacity(chan_thread.posts.len());
     let mut new_posts_count = 0;
     let post_quote_regex = imageboard.post_quote_regex();
 
+    find_post_replies(
+        thread_descriptor,
+        &chan_thread,
+        last_processed_post,
+        &mut found_post_replies_set,
+        &mut new_posts_count,
+        post_quote_regex
+    );
+
+    info!("process_posts({}) new_posts_count: {}", thread_descriptor, new_posts_count);
+
+    let last_post = chan_thread.posts.last();
+    if last_post.is_none() {
+        return Ok(());
+    }
+
+    let last_post = last_post.unwrap();
+
+    let last_post_descriptor = PostDescriptor::from_thread_descriptor(
+        thread_descriptor.clone(),
+        last_post.post_no,
+        last_post.post_sub_no.unwrap_or(0)
+    );
+
+    info!(
+        "process_posts({}) storing {} as last_processed_post",
+        thread_descriptor,
+        last_post_descriptor
+    );
+
+    thread_repository::store_last_processed_post(
+        &last_post_descriptor,
+        database
+    ).await?;
+
+    if found_post_replies_set.is_empty() {
+        info!("process_posts({}) end. No post replies found", thread_descriptor);
+        return Ok(());
+    }
+
+    info!("process_posts({}) found {} quotes", thread_descriptor, found_post_replies_set.len());
+
+    find_and_store_new_post_replies(
+        thread_descriptor,
+        &mut found_post_replies_set,
+        database,
+    ).await?;
+
+    info!("process_posts({}) end. Success!", thread_descriptor);
+    return Ok(());
+}
+
+pub async fn find_and_store_new_post_replies(
+    thread_descriptor: &ThreadDescriptor,
+    found_post_replies_set: &mut HashSet<FoundPostReply>,
+    database: &Arc<Database>,
+) -> anyhow::Result<()> {
+    let found_post_replies = found_post_replies_set.iter().collect::<Vec<&FoundPostReply>>();
+
+    let post_descriptor_db_ids = post_descriptor_id_repository::get_many_post_descriptor_db_ids(
+        &found_post_replies
+    ).await;
+
+    if post_descriptor_db_ids.is_empty() {
+        info!("process_posts({}) end. No reply db_ids found", thread_descriptor);
+        return Ok(());
+    }
+
+    let post_replies = post_repository::find_new_replies(
+        thread_descriptor,
+        database,
+        &post_descriptor_db_ids_to_vec_of_unique_keys(&post_descriptor_db_ids)
+    ).await?;
+
+    if post_replies.len() > 0 {
+        info!(
+            "process_posts({}) storing {} post replies into the database",
+            thread_descriptor,
+            post_replies.len()
+        );
+
+        post_reply_repository::store(&post_replies, &post_descriptor_db_ids, database)
+            .await
+            .context(format!("Failed to store post {} replies", post_replies.len()))?;
+    }
+
+    return Ok(());
+}
+
+fn find_post_replies(
+    thread_descriptor: &ThreadDescriptor,
+    chan_thread: &ChanThread,
+    last_processed_post: Option<PostDescriptor>,
+    found_post_replies_set: &mut HashSet<FoundPostReply>,
+    new_posts_count: &mut i32,
+    post_quote_regex: &Regex
+) {
     for post in &chan_thread.posts {
         let origin = PostDescriptor::from_thread_descriptor(
             thread_descriptor.clone(),
@@ -470,13 +569,17 @@ async fn process_posts(
 
         if last_processed_post.is_some() {
             let last_processed_post = last_processed_post.clone().unwrap();
-            let comparison_result = post_helpers::compare_post_descriptors(&origin, &last_processed_post);
+            let comparison_result = post_helpers::compare_post_descriptors(
+                &origin,
+                &last_processed_post
+            );
+
             if comparison_result == Ordering::Less || comparison_result == Ordering::Equal {
                 continue;
             }
         }
 
-        new_posts_count += 1;
+        *new_posts_count += 1;
 
         let post_comment = post.comment_unparsed.as_ref().map(|com| com.as_str()).unwrap_or("");
         if post_comment.is_empty() {
@@ -513,71 +616,6 @@ async fn process_posts(
             found_post_replies_set.insert(post_reply);
         }
     }
-
-    info!("process_posts({}) new_posts_count: {}", thread_descriptor, new_posts_count);
-
-    let last_post = chan_thread.posts.last();
-    if last_post.is_none() {
-        return Ok(());
-    }
-
-    let last_post = last_post.unwrap();
-
-    let last_post_descriptor = PostDescriptor::from_thread_descriptor(
-        thread_descriptor.clone(),
-        last_post.post_no,
-        last_post.post_sub_no.unwrap_or(0)
-    );
-
-    info!(
-        "process_posts({}) storing {} as last_processed_post",
-        thread_descriptor,
-        last_post_descriptor
-    );
-
-    thread_repository::store_last_processed_post(
-        &last_post_descriptor,
-        database
-    ).await?;
-
-    if found_post_replies_set.is_empty() {
-        info!("process_posts({}) end. No post replies found", thread_descriptor);
-        return Ok(());
-    }
-
-    info!("process_posts({}) found {} quotes", thread_descriptor, found_post_replies_set.len());
-
-    let found_post_replies = found_post_replies_set.iter().collect::<Vec<&FoundPostReply>>();
-
-    let post_descriptor_db_ids = post_descriptor_id_repository::get_many_post_descriptor_db_ids(
-        &found_post_replies
-    ).await;
-
-    if post_descriptor_db_ids.is_empty() {
-        info!("process_posts({}) end. No reply db_ids found", thread_descriptor);
-        return Ok(());
-    }
-
-    let post_replies = post_repository::find_new_replies(
-        thread_descriptor,
-        database,
-        &post_descriptor_db_ids_to_vec_of_unique_keys(&post_descriptor_db_ids)
-    ).await?;
-
-    if post_replies.len() > 0 {
-        info!(
-            "process_posts({}) storing {} post replies into the database",
-            thread_descriptor,
-            post_replies.len()
-        );
-
-        post_reply_repository::store(&post_replies, &post_descriptor_db_ids, database)
-            .await
-            .context(format!("Failed to store post {} replies", post_replies.len()))?;
-    }
-
-    info!("process_posts({}) end. Success!", thread_descriptor);
-    return Ok(());
 }
 
 fn post_descriptor_db_ids_to_vec_of_unique_keys(

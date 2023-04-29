@@ -270,7 +270,7 @@ pub async fn get_account(
 pub async fn create_account(
     database: &Arc<Database>,
     account_id: &AccountId,
-    valid_until: Option<&DateTime<Utc>>
+    valid_until: Option<DateTime<Utc>>
 ) -> anyhow::Result<CreateAccountResult> {
     let existing_account = get_account(account_id, database).await?;
     if existing_account.is_some() {
@@ -308,7 +308,7 @@ pub async fn create_account(
             id_generated,
             account_id.clone(),
             None,
-            valid_until.cloned()
+            valid_until.clone()
         );
 
         accounts_locked.insert(account_id.clone(), new_account);

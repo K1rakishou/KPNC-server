@@ -202,8 +202,6 @@ pub async fn find_new_replies(
         WHERE
             posts.owner_post_descriptor_id IN ({QUERY_PARAMS})
         AND
-            (post_reply IS NULL OR post_reply.notification_sent_on IS NULL)
-        AND
             post_reply.deleted_on IS NULL
     "#;
 
