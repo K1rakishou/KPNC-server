@@ -122,8 +122,6 @@ impl Logger {
                 continue;
             }
 
-            println!("Got {} new logs to insert into the database", unsent_logs_copy.len());
-
             let result = Self::delete_old_logs_from_database(
                 &database_cloned.as_ref().unwrap().clone()
             ).await;
