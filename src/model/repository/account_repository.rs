@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use tokio_postgres::Row;
 
 use crate::{constants, info, warn};
+use crate::helpers::db_helpers;
 use crate::helpers::hashers::Sha512Hashable;
 use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
@@ -423,6 +424,50 @@ pub async fn update_account_expiry_date(
     );
 
     return Ok(UpdateAccountExpiryDateResult::Ok);
+}
+
+pub async fn retain_post_db_ids_belonging_to_account(
+    account_id: &AccountId,
+    reply_ids: &Vec<i64>,
+    database: &Arc<Database>
+) -> anyhow::Result<Vec<i64>> {
+    let query = r#"
+        SELECT
+            post_replies.id_generated
+        FROM post_replies
+        INNER JOIN accounts account on account.id_generated = post_replies.owner_account_id
+        WHERE
+            account.account_id = $1
+        AND
+            post_replies.id_generated IN ({QUERY_PARAMS})
+    "#;
+
+    let connection = database.connection().await?;
+
+    let (query, mut db_params) = db_helpers::format_query_params_with_start_index(
+        query,
+        "{QUERY_PARAMS}",
+        1,
+        reply_ids
+    )?;
+
+    db_params.insert(0, &account_id.id);
+
+    let statement = connection.prepare(&query).await?;
+
+    let rows = connection.query(&statement, &db_params[..]).await?;
+    if rows.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut result_vec = Vec::<i64>::with_capacity(rows.len());
+
+    for row in rows {
+        let post_descriptor_id: i64 = row.try_get(0)?;
+        result_vec.push(post_descriptor_id);
+    }
+
+    return Ok(result_vec);
 }
 
 pub async fn test_get_account_from_cache(

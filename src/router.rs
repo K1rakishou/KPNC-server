@@ -105,6 +105,9 @@ pub async fn router(
         "update_firebase_token" => {
             handlers::update_firebase_token::handle(query, body, database).await
         },
+        "update_message_delivered" => {
+            handlers::update_message_delivered::handle(query, body, database, site_repository).await
+        }
         "get_account_info" => {
             handlers::get_account_info::handle(query, body, database).await
         },

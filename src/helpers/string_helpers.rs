@@ -34,7 +34,7 @@ impl FormatToken for FirebaseToken {
 
 fn format_token_internal<'a>(token: &'a str, chars: &Vec<char>) -> Cow<'a, str> {
     const THREEDOT_LENGTH: usize = 3;
-    const PART_LENGTH: usize = 6;
+    const PART_LENGTH: usize = 10;
 
     let string_length = chars.len();
     let mut current_part_length = PART_LENGTH as i32;

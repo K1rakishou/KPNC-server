@@ -27,7 +27,13 @@ pub struct FcmSender {
 
 #[derive(Debug, Serialize)]
 struct NewFcmRepliesMessage {
-    new_reply_urls: Vec<String>
+    new_reply_messages: Vec<FcmReplyMessage>
+}
+
+#[derive(Debug, Serialize)]
+struct FcmReplyMessage {
+    reply_id: u64,
+    new_reply_url: String
 }
 
 impl FcmSender {
@@ -116,13 +122,16 @@ impl FcmSender {
             result_vec
         };
 
-        // TODO: Maybe I should send a notification from a client back to the server when a message
-        //  was successfully received and only then mark it as notified onl after that?
-        //  In case we fail to deliver the message for whatever reason.
         if sent_post_reply_ids.len() > 0 {
-            post_reply_repository::mark_post_replies_as_notified(sent_post_reply_ids, &self.database)
+            post_reply_repository::increment_notification_delivery_attempt(
+                &sent_post_reply_ids,
+                &self.database
+            )
                 .await
-                .context("send_fcm_messages() Failed to mark messages as sent")?;
+                .with_context(|| {
+                    return "send_fcm_messages() Failed to increment notification \
+                        delivery attempt counter";
+                })?;
         }
 
         {
@@ -149,13 +158,22 @@ async fn send_unsent_reply(
     failed_to_send: &Arc<RwLock<HashSet<i64>>>,
     site_repository: &Arc<SiteRepository>
 ) -> anyhow::Result<()> {
-    let new_reply_urls: Vec<String> = unsent_replies
-        .into_iter()
-        .filter_map(|unsent_reply| site_repository.to_url(&unsent_reply.post_descriptor))
-        .collect();
+    let new_reply_messages: Vec<FcmReplyMessage> = convert_unsent_replies_to_fcm_messages(
+        unsent_replies,
+        site_repository
+    );
+
+    if new_reply_messages.is_empty() {
+        info!(
+            "send_unsent_reply({}) new_reply_messages is empty",
+            firebase_token.format_token()
+        );
+
+        return Ok(());
+    }
 
     let new_fcm_replies_message = NewFcmRepliesMessage {
-        new_reply_urls
+        new_reply_messages
     };
 
     info!(
@@ -209,4 +227,25 @@ async fn send_unsent_reply(
     }
 
     return Ok(());
+}
+
+fn convert_unsent_replies_to_fcm_messages(unsent_replies: &HashSet<UnsentReply>, site_repository: &Arc<SiteRepository>) -> Vec<FcmReplyMessage> {
+    unsent_replies
+        .into_iter()
+        .filter_map(|unsent_reply| {
+            let post_url = site_repository.to_url(&unsent_reply.post_descriptor);
+            if post_url.is_none() {
+                return None;
+            }
+
+            let post_url = post_url.unwrap();
+
+            let fcm_reply_message = FcmReplyMessage {
+                reply_id: unsent_reply.post_reply_id_generated as u64,
+                new_reply_url: post_url
+            };
+
+            return Some(fcm_reply_message);
+        })
+        .collect()
 }

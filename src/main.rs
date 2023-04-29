@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .context("Failed to init post_descriptor_id_repository")?;
 
     tokio::task::spawn(async move {
-        let mut thread_watcher = ThreadWatcher::new(num_cpus, timeout_seconds);
+        let mut thread_watcher = ThreadWatcher::new(num_cpus, timeout_seconds, is_dev_build);
 
         thread_watcher.start(
             &database_cloned_for_watcher,

@@ -10,6 +10,8 @@ use crate::model::database::db::Database;
 use crate::model::repository::post_descriptor_id_repository;
 use crate::service::thread_watcher::FoundPostReply;
 
+const MAX_NOTIFICATION_DELIVERY_ATTEMPTS: i16 = 25;
+
 pub struct PostReply {
     pub owner_post_descriptor_id: i64,
     pub owner_account_id: i64,
@@ -142,7 +144,9 @@ pub async fn get_unsent_replies(
             WHERE
                 post_replies.deleted_on IS NULL
             AND
-                post_replies.notification_sent_on IS NULL
+                post_replies.notification_delivery_attempt < $1
+            AND
+                post_replies.notification_delivered_on IS NULL
             AND
                 account.firebase_token IS NOT NULL
             AND
@@ -153,7 +157,7 @@ pub async fn get_unsent_replies(
 "#;
 
     let connection = database.connection().await?;
-    let rows = connection.query(query, &[]).await?;
+    let rows = connection.query(query, &[&MAX_NOTIFICATION_DELIVERY_ATTEMPTS]).await?;
 
     if rows.is_empty() {
         info!("No unsent replies found");
@@ -192,11 +196,11 @@ pub async fn get_unsent_replies(
     return Ok(unsent_replies);
 }
 
-pub async fn mark_post_replies_as_notified(
-    sent_post_reply_ids: Vec<i64>,
+pub async fn increment_notification_delivery_attempt(
+    sent_post_reply_ids: &Vec<i64>,
     database: &Arc<Database>
 ) -> anyhow::Result<()> {
-    info!("mark_post_replies_as_notified() Got {} sent_post_reply_ids", sent_post_reply_ids.len());
+    info!("increment_notification_delivery_attempt() Got {} sent_post_reply_ids", sent_post_reply_ids.len());
 
     if sent_post_reply_ids.is_empty() {
         return Ok(());
@@ -204,7 +208,32 @@ pub async fn mark_post_replies_as_notified(
 
     let query = r#"
         UPDATE post_replies
-        SET notification_sent_on = now()
+        SET notification_delivery_attempt = notification_delivery_attempt + 1
+        WHERE id_generated IN ({QUERY_PARAMS})
+    "#;
+
+    let (query, db_params) = db_helpers::format_query_params(
+        query,
+        "{QUERY_PARAMS}",
+        &sent_post_reply_ids
+    )?;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(&query).await?;
+    connection.execute(&statement, &db_params[..]).await?;
+
+    return Ok(());
+}
+
+pub async fn mark_post_replies_as_notified(
+    sent_post_reply_ids: &Vec<i64>,
+    database: &Arc<Database>
+) -> anyhow::Result<()> {
+    info!("mark_post_replies_as_notified() Got {} sent_post_reply_ids", sent_post_reply_ids.len());
+
+    let query = r#"
+        UPDATE post_replies
+        SET notification_delivered_on = now()
         WHERE id_generated IN ({QUERY_PARAMS})
     "#;
 

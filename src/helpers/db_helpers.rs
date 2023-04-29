@@ -6,6 +6,15 @@ pub fn format_query_params<'a, T : ToSql + Sync>(
     key: &str,
     params: &'a Vec<T>
 ) -> anyhow::Result<(String, Vec<&'a (dyn ToSql + Sync)>)> {
+    return format_query_params_with_start_index(query, key, 0, params);
+}
+
+pub fn format_query_params_with_start_index<'a, T : ToSql + Sync>(
+    query: &str,
+    key: &str,
+    start_index: usize,
+    params: &'a Vec<T>
+) -> anyhow::Result<(String, Vec<&'a (dyn ToSql + Sync)>)> {
     if params.is_empty() {
         return Err(anyhow!("params are empty!"))
     }
@@ -25,11 +34,15 @@ pub fn format_query_params<'a, T : ToSql + Sync>(
     let mut string_builder = string_builder::Builder::new(total_length);
     string_builder.append(query_start);
 
-    for index in 0..params_count {
-        string_builder.append(format!("${}", index + 1));
-        if index < (params_count - 1) {
+    let mut index = start_index + 1;
+
+    for _ in 0..params_count {
+        string_builder.append(format!("${}", index));
+        if index < params_count {
             string_builder.append(", ");
         }
+
+        index += 1;
     }
 
     string_builder.append(query_end);

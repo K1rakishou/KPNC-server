@@ -27,6 +27,7 @@ lazy_static! {
 pub struct ThreadWatcher {
     num_cpus: u32,
     timeout_seconds: u64,
+    is_dev_build: bool,
     working: bool
 }
 
@@ -37,8 +38,13 @@ pub struct FoundPostReply {
 }
 
 impl ThreadWatcher {
-    pub fn new(num_cpus: u32, timeout_seconds: u64) -> ThreadWatcher {
-        return ThreadWatcher { num_cpus, timeout_seconds, working: false };
+    pub fn new(num_cpus: u32, timeout_seconds: u64, is_dev_build: bool) -> ThreadWatcher {
+        return ThreadWatcher {
+            num_cpus,
+            timeout_seconds,
+            is_dev_build,
+            working: false
+        };
     }
 
     pub async fn start(
@@ -66,6 +72,11 @@ impl ThreadWatcher {
                 site_repository,
                 fcm_sender
             ).await;
+
+            if self.is_dev_build && result.is_err() {
+                result.unwrap();
+                unreachable!();
+            }
 
             let processed_threads = match result {
                 Ok(processed_threads) => {
@@ -522,7 +533,7 @@ pub async fn find_and_store_new_post_replies(
 ) -> anyhow::Result<()> {
     let found_post_replies = found_post_replies_set.iter().collect::<Vec<&FoundPostReply>>();
 
-    let post_descriptor_db_ids = post_descriptor_id_repository::get_many_post_descriptor_db_ids(
+    let post_descriptor_db_ids = post_descriptor_id_repository::get_many_found_post_reply_db_ids(
         &found_post_replies
     ).await;
 
