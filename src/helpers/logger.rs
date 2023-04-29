@@ -17,6 +17,7 @@ pub struct Logger {
 static mut LOGGER: Option<Logger> = None;
 
 pub fn init_logger(is_dev_build: bool, database: Option<Arc<Database>>) {
+    // We init the logger only once at the very beginning so it should be fine
     unsafe { LOGGER = Some(Logger::new(is_dev_build, database)); }
 }
 
@@ -39,7 +40,7 @@ impl Logger {
         is_dev_build: bool,
         database: Option<Arc<Database>>,
         mut receiver: UnboundedReceiver<LogLine>
-    ) -> ! {
+    ) {
         let unsent_logs = Arc::new(Mutex::new(Vec::<LogLine>::with_capacity(128)));
 
         let database_cloned = database.clone();
@@ -52,7 +53,7 @@ impl Logger {
         loop {
             let log_line = receiver.recv().await;
             if log_line.is_none() {
-                continue;
+                break;
             }
 
             let log_line = log_line.unwrap();
@@ -123,6 +124,18 @@ impl Logger {
 
             println!("Got {} new logs to insert into the database", unsent_logs_copy.len());
 
+            let result = Self::delete_old_logs_from_database(
+                &database_cloned.as_ref().unwrap().clone()
+            ).await;
+
+            if result.is_err() {
+                let error = result.err().unwrap();
+                println!("Failed to delete old logs from the database, error: {}", error);
+            } else {
+                let deleted = result.unwrap();
+                println!("Deleted {} logs from database", deleted);
+            }
+
             let result = Self::store_logs_into_database(
                 &database_cloned.as_ref().unwrap().clone(),
                 &unsent_logs_copy
@@ -135,6 +148,27 @@ impl Logger {
                 println!("Inserted {} logs into database", unsent_logs_copy.len());
             }
         }
+    }
+
+    async fn delete_old_logs_from_database(database: &Arc<Database>) -> anyhow::Result<u64> {
+        let query = r#"
+            DELETE
+            FROM logs
+            WHERE id IN (
+                SELECT id
+                FROM logs
+                WHERE log_time < $1
+                ORDER BY log_time DESC
+            )
+        "#;
+
+        let connection = database.connection().await?;
+        let statement = connection.prepare(query).await?;
+
+        let date = Utc::now() - chrono::Duration::days(14);
+        let deleted = connection.execute(&statement, &[&date]).await?;
+
+        return Ok(deleted);
     }
 
     async fn store_logs_into_database(
