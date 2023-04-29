@@ -1,7 +1,7 @@
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use serde::{Deserialize, Deserializer, Serializer};
 
-pub fn serialize_datetime<S>(datetime: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+pub fn serialize_datetime_option<S>(datetime: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
 {
@@ -10,6 +10,13 @@ pub fn serialize_datetime<S>(datetime: &Option<DateTime<Utc>>, serializer: S) ->
     }
 
     let datetime = datetime.unwrap();
+    return serializer.serialize_i64(datetime.timestamp_millis());
+}
+
+pub fn serialize_datetime<S>(datetime: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+{
     return serializer.serialize_i64(datetime.timestamp_millis());
 }
 

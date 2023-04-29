@@ -70,6 +70,7 @@ pub async fn router(
     let query = path_and_query.query().unwrap_or("");
 
     match path {
+        "get_logs" |
         "create_account" |
         "update_account_expiry_date" => {
             if master_password.to_lowercase() != master_password_from_request.to_lowercase() {
@@ -111,6 +112,9 @@ pub async fn router(
         "get_account_info" => {
             handlers::get_account_info::handle(query, body, database).await
         },
+        "get_logs" => {
+            handlers::get_logs::handle(query, body, database).await
+        }
         "watch_post" => {
             handlers::watch_post::handle(query, body, database, site_repository).await
         },

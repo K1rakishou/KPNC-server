@@ -90,6 +90,7 @@ fn init_request_limits() -> HashMap<String, usize> {
     let mut result_map = HashMap::<String, usize>::new();
 
     // All limits are per minute.
+    result_map.insert("get_logs".to_string(), 15);
     result_map.insert("create_account".to_string(), 5);
     result_map.insert("update_account_expiry_date".to_string(), 5);
     result_map.insert("update_firebase_token".to_string(), 5);

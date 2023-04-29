@@ -7,9 +7,10 @@ use hyper::body::{Bytes, Incoming};
 use hyper::Response;
 use serde::{Deserialize, Serialize};
 
-use crate::error;
+use crate::{error, info};
 use crate::handlers::shared::{ContentType, error_response_str, ServerSuccessResponse, success_response};
-use crate::helpers::serde_helpers::{deserialize_datetime, serialize_datetime};
+use crate::helpers::serde_helpers::{deserialize_datetime, serialize_datetime_option};
+use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
 use crate::model::repository::account_repository::AccountId;
@@ -22,7 +23,7 @@ pub struct AccountInfoRequest {
 #[derive(Serialize, Deserialize)]
 pub struct AccountInfoResponse {
     pub is_valid: bool,
-    #[serde(serialize_with = "serialize_datetime", deserialize_with = "deserialize_datetime")]
+    #[serde(serialize_with = "serialize_datetime_option", deserialize_with = "deserialize_datetime")]
     pub valid_until: Option<DateTime<Utc>>
 }
 
@@ -50,12 +51,20 @@ pub async fn handle(
 
     let account = account_repository::get_account(&account_id, database)
         .await
-        .context(format!("Failed to get account from repository with account_id \'{}\'", account_id))?;
+        .with_context(|| {
+            return format!(
+                "Failed to get account from repository with account_id \'{}\'",
+                account_id.format_token()
+            );
+        })?;
 
     if account.is_none() {
-        let response_json = error_response_str("Account does not exist")?;
-        error!("get_account_info() Account with id \'{}\' does not exist", account_id);
+        error!(
+            "get_account_info() Account with id \'{}\' does not exist",
+            account_id.format_token()
+        );
 
+        let response_json = error_response_str("Account does not exist")?;
         let response = Response::builder()
             .json()
             .status(200)
@@ -77,5 +86,6 @@ pub async fn handle(
         .status(200)
         .body(Full::new(Bytes::from(response_json)))?;
 
+    info!("get_account_info() Success \'{}\'", account_id.format_token());
     return Ok(response);
 }
