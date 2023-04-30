@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Context;
+use fcm::Priority;
 use lazy_static::lazy_static;
 use serde::Serialize;
 use tokio::sync::RwLock;
@@ -188,7 +189,9 @@ async fn send_unsent_reply(
     map.insert("message_body", new_fcm_replies_message_json);
 
     let mut builder = fcm::MessageBuilder::new(firebase_api_key.as_str(), firebase_token.as_str());
-    builder.data(&map)?;
+    builder
+        .priority(Priority::High)
+        .data(&map)?;
 
     let response = client.send(builder.finalize()).await?;
 

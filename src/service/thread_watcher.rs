@@ -127,8 +127,8 @@ async fn process_watched_threads(
     }
 
     let mut chunk_size: usize = (num_cpus * 4) as usize;
-    if chunk_size < 8 {
-        chunk_size = 8;
+    if chunk_size < 16 {
+        chunk_size = 16;
     }
     if chunk_size > 128 {
         chunk_size = 128;
