@@ -22,6 +22,7 @@ pub struct AccountInfoRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct AccountInfoResponse {
+    pub account_id: String,
     pub is_valid: bool,
     #[serde(serialize_with = "serialize_datetime_option", deserialize_with = "deserialize_datetime")]
     pub valid_until: Option<DateTime<Utc>>
@@ -76,6 +77,7 @@ pub async fn handle(
     let account = account.unwrap();
 
     let account_info_response = AccountInfoResponse {
+        account_id: account.account_id.id.clone(),
         is_valid: account.is_valid(),
         valid_until: account.valid_until
     };
