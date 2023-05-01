@@ -148,6 +148,15 @@ pub async fn stop_watching_post(
         post_descriptor
     ).await;
 
+    if owner_post_descriptor_id.is_none() {
+        info!(
+            "stop_watching_post() Failed to find post id for post descriptor {} in cache",
+            post_descriptor
+        );
+
+        return Ok(StopWatchingPostResult::Ok);
+    }
+
     let query = r#"
         DELETE FROM post_watches
         WHERE id_generated IN (

@@ -123,16 +123,16 @@ pub async fn delete_all_thread_posts(thread_descriptor: &ThreadDescriptor) {
     }
 }
 
-pub async fn get_post_descriptor_db_id(post_descriptor: &PostDescriptor) -> i64 {
+pub async fn get_post_descriptor_db_id(post_descriptor: &PostDescriptor) -> Option<i64> {
     let pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.read().await;
-    return *pd_to_dbid_cache_locked.get(post_descriptor).unwrap();
+    return pd_to_dbid_cache_locked.get(post_descriptor).cloned();
 }
 
 pub async fn get_many_post_descriptor_db_ids(post_descriptors: &Vec<PostDescriptor>) -> Vec<i64> {
     let pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.read().await;
     
     return post_descriptors.iter()
-        .map(|post_descriptor| *pd_to_dbid_cache_locked.get(post_descriptor).unwrap())
+        .filter_map(|post_descriptor| pd_to_dbid_cache_locked.get(post_descriptor).cloned())
         .collect::<Vec<i64>>()
 }
 
