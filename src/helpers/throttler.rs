@@ -97,6 +97,7 @@ fn init_request_limits() -> HashMap<String, usize> {
     result_map.insert("update_message_delivered".to_string(), 15);
     result_map.insert("get_account_info".to_string(), 15);
     result_map.insert("watch_post".to_string(), 10);
+    result_map.insert("unwatch_post".to_string(), 10);
     result_map.insert("".to_string(), 30);
     result_map.insert("favicon.ico".to_string(), 30);
 

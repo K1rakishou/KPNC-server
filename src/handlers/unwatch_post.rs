@@ -12,11 +12,11 @@ use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::AccountId;
 use crate::model::repository::post_repository;
-use crate::model::repository::post_repository::StartWatchingPostResult;
+use crate::model::repository::post_repository::StopWatchingPostResult;
 use crate::model::repository::site_repository::SiteRepository;
 
 #[derive(Serialize, Deserialize)]
-pub struct WatchPostRequest {
+pub struct UnwatchPostRequest {
     pub user_id: String,
     pub post_url: String
 }
@@ -35,8 +35,8 @@ pub async fn handle(
     let body_as_string = String::from_utf8(body_bytes.to_vec())
         .context("Failed to convert body into a string")?;
 
-    let request: WatchPostRequest = serde_json::from_str(body_as_string.as_str())
-        .context("Failed to convert body into WatchPostRequest")?;
+    let request: UnwatchPostRequest = serde_json::from_str(body_as_string.as_str())
+        .context("Failed to convert body into UnwatchPostRequest")?;
 
     let account_id = AccountId::from_user_id(&request.user_id)?;
     let post_url = validate_post_url(&request.post_url)?;
@@ -46,7 +46,7 @@ pub async fn handle(
         let full_error_message = format!("Site for url \'{}\' is not supported", post_url);
 
         let response_json = error_response_string(&full_error_message)?;
-        error!("watch_post() {}", full_error_message);
+        error!("unwatch_post() {}", full_error_message);
 
         let response = Response::builder()
             .json()
@@ -63,7 +63,7 @@ pub async fn handle(
         let full_error_message = format!("Failed to parse \'{}\' url as post url", post_url);
 
         let response_json = error_response_string(&full_error_message)?;
-        error!("watch_post() {}", full_error_message);
+        error!("unwatch_post() {}", full_error_message);
 
         let response = Response::builder()
             .json()
@@ -74,19 +74,19 @@ pub async fn handle(
     }
 
     let post_descriptor = post_descriptor.unwrap();
-    info!("watch_post() post_descriptor: {}", post_descriptor);
+    info!("unwatch_post() post_descriptor: {}", post_descriptor);
 
-    let post_watch_created_result = post_repository::start_watching_post(
+    let post_watch_deleted_result = post_repository::stop_watching_post(
         database,
         &account_id,
         &post_descriptor
-    ).await.context(format!("Failed to start watching post {}", post_descriptor))?;
+    ).await.context(format!("Failed to unwatch post {}", post_descriptor))?;
 
-    if post_watch_created_result != StartWatchingPostResult::Ok {
-        let error_message = match post_watch_created_result {
-            StartWatchingPostResult::Ok => unreachable!(),
-            StartWatchingPostResult::AccountDoesNotExist => "Account does not exist",
-            StartWatchingPostResult::AccountIsNotValid => "Account already expired",
+    if post_watch_deleted_result != StopWatchingPostResult::Ok {
+        let error_message = match post_watch_deleted_result {
+            StopWatchingPostResult::Ok => unreachable!(),
+            StopWatchingPostResult::AccountDoesNotExist => "Account does not exist",
+            StopWatchingPostResult::AccountIsNotValid => "Account already expired",
         };
 
         let response_json = error_response_str(error_message)?;
@@ -97,10 +97,10 @@ pub async fn handle(
             .body(Full::new(Bytes::from(response_json)))?;
 
         info!(
-            "Failed to start watching post {} for account {}, result: {:?}",
+            "Failed to unwatch post {} for account {}, result: {:?}",
             post_descriptor,
             account_id,
-            post_watch_created_result
+            post_watch_deleted_result
         );
 
         return Ok(response);
@@ -114,7 +114,7 @@ pub async fn handle(
         .body(Full::new(Bytes::from(response_json)))?;
 
     info!(
-        "Post watch for post {} and account id {} was successfully created",
+        "Post watch for post {} and account id {} was successfully deleted",
         post_descriptor,
         account_id.format_token()
     );

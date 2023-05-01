@@ -16,8 +16,14 @@ use crate::model::repository::post_reply_repository::PostReply;
 pub enum StartWatchingPostResult {
     Ok,
     AccountDoesNotExist,
-    AccountIsNotValid,
-    PostWatchAlreadyExists
+    AccountIsNotValid
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum StopWatchingPostResult {
+    Ok,
+    AccountDoesNotExist,
+    AccountIsNotValid
 }
 
 pub async fn start_watching_post(
@@ -95,7 +101,7 @@ pub async fn start_watching_post(
         transaction.rollback().await?;
 
         info!("start_watching_post() Post watch {} already exists in the database", post_descriptor);
-        return Ok(StartWatchingPostResult::PostWatchAlreadyExists);
+        return Ok(StartWatchingPostResult::Ok);
     }
 
     transaction.commit().await?;
@@ -108,6 +114,70 @@ pub async fn start_watching_post(
     );
 
     return Ok(StartWatchingPostResult::Ok);
+}
+
+pub async fn stop_watching_post(
+    database: &Arc<Database>,
+    account_id: &AccountId,
+    post_descriptor: &PostDescriptor
+) -> anyhow::Result<StopWatchingPostResult> {
+    let account = account_repository::get_account(account_id, database).await?;
+    if account.is_none() {
+        info!(
+            "stop_watching_post() account with id \'{}\' does not exist",
+            account_id.format_token()
+        );
+
+        return Ok(StopWatchingPostResult::AccountDoesNotExist);
+    }
+
+    let account = account.unwrap();
+    if !account.is_valid() {
+        info!(
+            "stop_watching_post() account with id \'{}\' is not valid (status: {})",
+            account_id.format_token(),
+            account.validation_status().unwrap()
+        );
+
+        return Ok(StopWatchingPostResult::AccountIsNotValid);
+    }
+
+    let connection = database.connection().await?;
+
+    let owner_post_descriptor_id = post_descriptor_id_repository::get_post_descriptor_db_id(
+        post_descriptor
+    ).await;
+
+    let query = r#"
+        DELETE FROM post_watches
+        WHERE id_generated IN (
+            SELECT
+                post_watch.id_generated
+            FROM post_descriptors
+                 INNER JOIN posts post on post_descriptors.id_generated = post.owner_post_descriptor_id
+                 INNER JOIN post_watches post_watch on post.id_generated = post_watch.owner_post_id
+                 INNER JOIN accounts a on a.id_generated = post_watch.owner_account_id
+            WHERE
+                post_descriptors.id_generated = $1
+            AND
+                a.account_id = $2
+        )
+    "#;
+
+    let statement = connection.prepare(query).await?;
+    let deleted = connection.execute(
+        &statement,
+        &[&owner_post_descriptor_id, &account.account_id.id]
+    ).await?;
+
+    let firebase_token = account.firebase_token.unwrap();
+    info!(
+        "stop_watching_post() Deleted {} post watches for user with token {}",
+        deleted,
+        firebase_token.format_token()
+    );
+
+    return Ok(StopWatchingPostResult::Ok);
 }
 
 pub async fn get_all_watched_threads(
@@ -203,6 +273,8 @@ pub async fn find_new_replies(
             posts.owner_post_descriptor_id IN ({QUERY_PARAMS})
         AND
             post_reply.deleted_on IS NULL
+        AND
+            account.id_generated IS NOT NULL
     "#;
 
     let (query, query_params) = db_helpers::format_query_params(

@@ -4,6 +4,7 @@ pub mod update_account_expiry_date;
 pub mod update_firebase_token;
 pub mod get_account_info;
 pub mod watch_post;
+pub mod unwatch_post;
 pub mod update_message_delivered;
 pub mod get_logs;
 pub mod shared;

@@ -73,9 +73,9 @@ pub async fn router(
         "get_logs" |
         "create_account" |
         "update_account_expiry_date" => {
-            if master_password.to_lowercase() != master_password_from_request.to_lowercase() {
+            if master_password != master_password_from_request {
                 info!(
-                    "router() Client {} sent incorrect master password: {}",
+                    "router() Client {} sent incorrect master password: \'{}\'",
                     remote_address,
                     master_password_from_request
                 );
@@ -117,6 +117,9 @@ pub async fn router(
         }
         "watch_post" => {
             handlers::watch_post::handle(query, body, database, site_repository).await
+        },
+        "unwatch_post" => {
+            handlers::unwatch_post::handle(query, body, database, site_repository).await
         },
         _ => {
             handlers::index::handle(query, body).await
