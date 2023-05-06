@@ -21,7 +21,8 @@ pub async fn mark_post_replies_as_notified(
     ).await?;
 
     if retained_sent_post_reply_ids.is_empty() {
-        info!("mark_post_replies_as_notified() retain_post_db_ids_belonging_to_account() returned empty vec");
+        info!("mark_post_replies_as_notified() retain_post_db_ids_belonging_to_account() \
+            returned empty vec");
         return Ok(());
     }
 

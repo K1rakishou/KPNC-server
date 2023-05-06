@@ -8,23 +8,32 @@ use hyper::Response;
 use serde::{Deserialize, Serialize};
 
 use crate::{error, info};
-use crate::handlers::shared::{ContentType, error_response_str, ServerSuccessResponse, success_response};
+use crate::handlers::shared::{ContentType, error_response_str, error_response_string, ServerSuccessResponse, success_response};
 use crate::helpers::serde_helpers::{deserialize_datetime, serialize_datetime_option};
+use crate::helpers::serde_helpers::{deserialize_application_type, serialize_application_type};
 use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
-use crate::model::repository::account_repository::AccountId;
+use crate::model::repository::account_repository::{AccountId, ApplicationType};
 
 #[derive(Serialize, Deserialize)]
 pub struct AccountInfoRequest {
-    pub user_id: String
+    pub user_id: String,
+    #[serde(
+        serialize_with = "serialize_application_type",
+        deserialize_with = "deserialize_application_type"
+    )]
+    pub application_type: ApplicationType,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct AccountInfoResponse {
     pub account_id: String,
     pub is_valid: bool,
-    #[serde(serialize_with = "serialize_datetime_option", deserialize_with = "deserialize_datetime")]
+    #[serde(
+        serialize_with = "serialize_datetime_option",
+        deserialize_with = "deserialize_datetime"
+    )]
     pub valid_until: Option<DateTime<Utc>>
 }
 
@@ -48,13 +57,31 @@ pub async fn handle(
     let request: AccountInfoRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into AccountInfoRequest")?;
 
+    let application_type = request.application_type;
+    if application_type == ApplicationType::Unknown {
+        let error_message = format!(
+            "Unsupported \'application_type\' parameter value: {}",
+            application_type as isize
+        );
+
+        error!("get_account_info() {}", error_message);
+
+        let response_json = error_response_string(&error_message)?;
+        let response = Response::builder()
+            .json()
+            .status(200)
+            .body(Full::new(Bytes::from(response_json)))?;
+
+        return Ok(response);
+    }
+
     let account_id = AccountId::from_user_id(&request.user_id)?;
 
     let account = account_repository::get_account(&account_id, database)
         .await
         .with_context(|| {
             return format!(
-                "Failed to get account from repository with account_id \'{}\'",
+                "get_account_info() Failed to get account from repository with account_id \'{}\'",
                 account_id.format_token()
             );
         })?;
@@ -76,10 +103,14 @@ pub async fn handle(
 
     let account = account.unwrap();
 
-    let account_info_response = AccountInfoResponse {
-        account_id: account.account_id.id.clone(),
-        is_valid: account.is_valid(),
-        valid_until: account.valid_until
+    let account_info_response = {
+        let acc = account.lock().await;
+
+        AccountInfoResponse {
+            account_id: acc.account_id.id.clone(),
+            is_valid: acc.is_valid(&application_type),
+            valid_until: acc.valid_until
+        }
     };
 
     let response_json = success_response(account_info_response)?;

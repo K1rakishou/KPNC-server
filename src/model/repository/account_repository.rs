@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio_postgres::Row;
 
 use crate::{constants, info, warn};
@@ -15,21 +15,141 @@ use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
 
 lazy_static! {
-    static ref ACCOUNTS_CACHE: RwLock<HashMap<AccountId, Account>> = RwLock::new(HashMap::with_capacity(1024));
+    static ref ACCOUNTS_CACHE: RwLock<HashMap<AccountId, Arc<Mutex<Account>>>> =
+        RwLock::new(HashMap::with_capacity(1024));
 }
 
 #[derive(Clone)]
 pub struct Account {
     pub id_generated: i64,
     pub account_id: AccountId,
-    pub firebase_token: Option<FirebaseToken>,
+    pub tokens: Vec<AccountToken>,
     pub valid_until: Option<DateTime<Utc>>
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct AccountToken {
+    pub token: String,
+    pub application_type: ApplicationType,
+    pub token_type: TokenType
+}
+
+impl Display for AccountToken {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AccountToken(")?;
+        write!(f, "{}, ", self.token.format_token())?;
+        write!(f, "{}, ", self.application_type)?;
+        write!(f, "{}, ", self.token_type)?;
+        write!(f, ")")?;
+        return Ok(());
+    }
+}
+
+impl AccountToken {
+    pub fn from_row(row: &Row) -> anyhow::Result<AccountToken> {
+        let token: String = row.try_get(0)?;
+        let application_type: i64 = row.try_get(1)?;
+        let token_type: i64 = row.try_get(2)?;
+
+        let application_type = ApplicationType::from_i64(application_type);
+        let token_type = TokenType::from_i64(token_type);
+
+        let account_token = AccountToken {
+            token,
+            application_type,
+            token_type
+        };
+
+        return Ok(account_token);
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum ApplicationType {
+    Unknown = -1,
+    KurobaExLiteDebug = 0,
+    KurobaExLiteProduction = 1,
+}
+
+impl Display for ApplicationType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ApplicationType::KurobaExLiteDebug => {
+                write!(f, "KurobaExLiteDebug")?;
+            }
+            ApplicationType::KurobaExLiteProduction => {
+                write!(f, "KurobaExLiteProduction")?;
+            }
+            ApplicationType::Unknown => {
+                write!(f, "Unknown")?;
+            }
+        }
+
+        return Ok(());
+    }
+}
+
+impl ApplicationType {
+    pub fn from_i64(value: i64) -> ApplicationType {
+        let application_type = match value {
+            0 => ApplicationType::KurobaExLiteDebug,
+            1 => ApplicationType::KurobaExLiteProduction,
+            _ => ApplicationType::Unknown
+        };
+
+        return application_type;
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum TokenType {
+    Unknown = -1,
+    Firebase = 0
+}
+
+impl Display for TokenType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenType::Firebase => {
+                write!(f, "Firebase")?;
+            }
+            TokenType::Unknown => {
+                write!(f, "Unknown")?;
+            }
+        }
+
+        return Ok(());
+    }
+}
+
+impl TokenType {
+    pub fn from_i64(value: i64) -> TokenType {
+        let token_type = match value {
+            0 => TokenType::Firebase,
+            _ => TokenType::Unknown
+        };
+
+        return token_type;
+    }
+}
+
 impl Account {
-    pub fn is_valid(&self) -> bool {
-        let firebase_token = &self.firebase_token;
-        if firebase_token.is_none() {
+    pub fn get_account_token(
+        &self,
+        application_type: &ApplicationType
+    ) -> Option<&AccountToken> {
+        for token in &self.tokens {
+            if token.application_type == *application_type {
+                return Some(token);
+            }
+        }
+
+        return None;
+    }
+
+    pub fn is_valid(&self, application_type: &ApplicationType) -> bool {
+        let token = &self.get_account_token(application_type);
+        if token.is_none() {
             return false;
         }
 
@@ -44,10 +164,10 @@ impl Account {
         return valid_until >= now;
     }
 
-    pub fn validation_status(&self) -> Option<String> {
-        let firebase_token = &self.firebase_token;
-        if firebase_token.is_none() {
-            return Some("firebase_token is not set".to_string());
+    pub fn validation_status(&self, application_type: &ApplicationType) -> Option<String> {
+        let token = &self.get_account_token(application_type);
+        if token.is_none() {
+            return Some(format!("token for app_type \'{}\' is not set", application_type));
         }
 
         let valid_until = self.valid_until;
@@ -69,6 +189,52 @@ impl Account {
         }
 
         return None;
+    }
+
+    pub fn add_or_update_token(&mut self, new_token: AccountToken) {
+        for (index, old_token) in self.tokens.iter().enumerate() {
+            if old_token.token == new_token.token {
+                let mut updated_token = self.tokens[index].clone();
+                updated_token.token_type = new_token.token_type;
+                updated_token.application_type = new_token.application_type;
+                return;
+            }
+        }
+
+        self.tokens.push(new_token)
+    }
+
+    pub fn account_token(&self, application_type: &ApplicationType) -> Option<&AccountToken> {
+        return self.get_account_token(application_type);
+    }
+
+    pub fn new(
+        id_generated: i64,
+        account_id: AccountId,
+        tokens: Vec<AccountToken>,
+        valid_until: Option<DateTime<Utc>>
+    ) -> Account {
+        return Account {
+            id_generated,
+            account_id,
+            tokens,
+            valid_until
+        }
+    }
+
+    pub fn from_row(row: &Row) -> anyhow::Result<Account> {
+        let id_generated: i64 = row.try_get(0)?;
+        let account_id: String = row.try_get(1)?;
+        let valid_until: Option<DateTime<Utc>> = row.try_get(2)?;
+
+        let account = Account {
+            id_generated,
+            account_id: AccountId::new(account_id),
+            tokens: Vec::with_capacity(4),
+            valid_until
+        };
+
+        return Ok(account);
     }
 }
 
@@ -160,67 +326,18 @@ impl Display for FirebaseToken {
 impl Display for Account {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Account(")?;
-        write!(f, "account_id: {}, ", self.account_id)?;
-
-        if self.firebase_token.is_some() {
-            write!(f, "firebase_token: {}, ", self.firebase_token.clone().unwrap())?;
-        } else {
-            write!(f, "firebase_token: None, ")?;
-        }
-
-        write!(f, "valid_until: {:?}, ", self.valid_until)?;
+        write!(f, "{}, ", self.account_id)?;
+        write!(f, "{}, ", self.tokens.len())?;
+        write!(f, "{:?}, ", self.valid_until)?;
         write!(f, ")")?;
         return Ok(());
-    }
-}
-
-impl Account {
-    pub fn firebase_token(&self) -> Option<&FirebaseToken> {
-        return self.firebase_token.as_ref()
-    }
-
-    pub fn new(
-        id_generated: i64,
-        account_id: AccountId,
-        firebase_token: Option<FirebaseToken>,
-        valid_until: Option<DateTime<Utc>>
-    ) -> Account {
-        return Account {
-            id_generated,
-            account_id,
-            firebase_token,
-            valid_until
-        }
-    }
-
-    pub fn from_row(row: &Row) -> anyhow::Result<Account> {
-        let id_generated: i64 = row.try_get(0)?;
-        let account_id: String = row.try_get(1)?;
-        let firebase_token_result = row.try_get(2);
-        let valid_until: Option<DateTime<Utc>> = row.try_get(3)?;
-
-        let firebase_token: Option<&str> = if firebase_token_result.is_err() {
-            None
-        } else {
-            Some(firebase_token_result.unwrap())
-        };
-
-
-        let account = Account {
-            id_generated,
-            account_id: AccountId::new(account_id),
-            firebase_token: FirebaseToken::from_opt_str(firebase_token)?,
-            valid_until
-        };
-
-        return Ok(account);
     }
 }
 
 pub async fn get_account(
     account_id: &AccountId,
     database: &Arc<Database>,
-) -> anyhow::Result<Option<Account>> {
+) -> anyhow::Result<Option<Arc<Mutex<Account>>>> {
     let from_cache = {
         ACCOUNTS_CACHE.read()
             .await
@@ -232,37 +349,24 @@ pub async fn get_account(
         return Ok(Some(from_cache.unwrap()));
     }
 
-    let query = r#"
-        SELECT
-            accounts.id_generated,
-            accounts.account_id,
-            accounts.firebase_token,
-            accounts.valid_until
-        FROM accounts
-        WHERE
-            accounts.account_id = $1
-        AND
-            accounts.deleted_on IS NULL
-"#;
-
-    let connection = database.connection().await?;
-    let statement = connection.prepare(query).await?;
-
-    let row = connection.query_opt(&statement, &[&account_id.id]).await?;
-    if row.is_none() {
+    let account = get_account_from_database(&account_id, database).await?;
+    if account.is_none() {
         return Ok(None);
     }
 
-    let account = Account::from_row(&row.unwrap());
-    if account.is_err() {
-        return Err(account.err().unwrap());
+    let account_tokens = get_account_tokens_from_database(&account_id, database).await?;
+
+    let mut account = account.unwrap();
+    for account_token in account_tokens {
+        account.add_or_update_token(account_token);
     }
 
-    let account = account.unwrap();
+    let account_id = account.account_id.clone();
+    let account = Arc::new(Mutex::new(account));
 
     {
         let mut cache = ACCOUNTS_CACHE.write().await;
-        cache.insert(account.account_id.clone(), account.clone());
+        cache.insert(account_id, account.clone());
     };
 
     return Ok(Some(account));
@@ -308,10 +412,11 @@ pub async fn create_account(
         let new_account = Account::new(
             id_generated,
             account_id.clone(),
-            None,
+            Vec::with_capacity(4),
             valid_until.clone()
         );
 
+        let new_account = Arc::new(Mutex::new(new_account));
         accounts_locked.insert(account_id.clone(), new_account);
     }
 
@@ -321,6 +426,7 @@ pub async fn create_account(
 pub async fn update_firebase_token(
     database: &Arc<Database>,
     account_id: &AccountId,
+    application_type: &ApplicationType,
     firebase_token: &FirebaseToken
 ) -> anyhow::Result<UpdateFirebaseTokenResult> {
     let existing_account = get_account(account_id, database).await?;
@@ -334,11 +440,14 @@ pub async fn update_firebase_token(
     }
 
     let query = r#"
-        UPDATE accounts
-        SET
-            firebase_token = $1
-        WHERE
-            account_id = $2
+        INSERT INTO account_tokens (
+            owner_account_id,
+            token,
+            application_type,
+            token_type
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (token, application_type, token_type) DO NOTHING
     "#;
 
     let connection = database.connection().await?;
@@ -346,25 +455,37 @@ pub async fn update_firebase_token(
 
     connection.execute(
         &statement,
-        &[&firebase_token.token, &account_id.id]
+        &[
+            &account_id.id,
+            &firebase_token.token,
+            &(application_type.clone() as i64),
+            &(TokenType::Firebase as i64)
+        ]
     )
         .await
-        .context("update_account() Failed to update firebase_token in the database")?;
+        .context("update_firebase_token() Failed to update firebase_token in the database")?;
 
     {
         let mut accounts_locked = ACCOUNTS_CACHE.write().await;
 
         let existing_account = accounts_locked.get_mut(account_id);
         if existing_account.is_some() {
-            let mut existing_account = existing_account.unwrap();
-            existing_account.firebase_token = Some(firebase_token.clone());
+            let mut existing_account = existing_account.unwrap().lock().await;
+
+            let account_token = AccountToken {
+                token: firebase_token.token.clone(),
+                application_type: application_type.clone(),
+                token_type: TokenType::Firebase
+            };
+
+            existing_account.add_or_update_token(account_token);
         } else {
             return Err(anyhow!("Account {} does not exist!", account_id));
         }
     }
 
     info!(
-        "update_account() success. account_id: {}, firebase_token: {}",
+        "update_firebase_token() success. account_id: {}, firebase_token: {}",
         account_id.format_token(),
         firebase_token.format_token()
     );
@@ -410,7 +531,7 @@ pub async fn update_account_expiry_date(
 
         let existing_account = accounts_locked.get_mut(account_id);
         if existing_account.is_some() {
-            let mut existing_account = existing_account.unwrap();
+            let mut existing_account = existing_account.unwrap().lock().await;
             existing_account.valid_until = Some(valid_until.clone());
         } else {
             return Err(anyhow!("Account {} does not exist!", account_id));
@@ -470,9 +591,74 @@ pub async fn retain_post_db_ids_belonging_to_account(
     return Ok(result_vec);
 }
 
+async fn get_account_from_database(
+    account_id: &AccountId,
+    database: &Arc<Database>
+) -> anyhow::Result<Option<Account>> {
+    let query = r#"
+        SELECT
+            accounts.id_generated,
+            accounts.account_id,
+            accounts.valid_until
+        FROM accounts
+        WHERE
+            accounts.account_id = $1
+        AND
+            accounts.deleted_on IS NULL
+    "#;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query).await?;
+
+    let row = connection.query_opt(&statement, &[&account_id.id]).await?;
+    if row.is_none() {
+        return Ok(None);
+    }
+
+    let account = Account::from_row(&row.unwrap());
+    if account.is_err() {
+        return Err(account.err().unwrap());
+    }
+
+    return Ok(Some(account.unwrap()));
+}
+
+async fn get_account_tokens_from_database(
+    account_id: &AccountId,
+    database: &Arc<Database>
+) -> anyhow::Result<Vec<AccountToken>> {
+    let query = r#"
+        SELECT
+            token,
+            application_type,
+            token_type
+        FROM accounts
+        INNER JOIN
+            account_tokens account_token on accounts.id_generated = account_token.owner_account_id
+        WHERE account_id = $1
+    "#;
+
+    let connection = database.connection().await?;
+    let statement = connection.prepare(query).await?;
+
+    let rows = connection.query(&statement, &[&account_id.id]).await?;
+    if rows.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut result_vec = Vec::<AccountToken>::with_capacity(rows.len());
+
+    for row in rows {
+        let account_token = AccountToken::from_row(&row)?;
+        result_vec.push(account_token);
+    }
+
+    return Ok(result_vec);
+}
+
 pub async fn test_get_account_from_cache(
     account_id: &AccountId,
-) -> Option<Account> {
+) -> Option<Arc<Mutex<Account>>> {
     return ACCOUNTS_CACHE.read()
         .await
         .get(account_id)
@@ -483,7 +669,11 @@ pub async fn test_put_account_into_cache(
     account: &Account
 ) {
     let mut account_cache_locked = ACCOUNTS_CACHE.write().await;
-    account_cache_locked.insert(account.clone().account_id, account.clone());
+
+    let account_id = account.account_id.clone();
+    let account = Arc::new(Mutex::new(account.clone()));
+
+    account_cache_locked.insert(account_id, account);
 }
 
 pub async fn test_get_account_from_database(

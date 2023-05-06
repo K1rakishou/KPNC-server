@@ -9,7 +9,7 @@ use crate::info;
 use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
 use crate::model::repository::{account_repository, post_descriptor_id_repository};
-use crate::model::repository::account_repository::AccountId;
+use crate::model::repository::account_repository::{AccountId, ApplicationType};
 use crate::model::repository::post_reply_repository::PostReply;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -29,6 +29,7 @@ pub enum StopWatchingPostResult {
 pub async fn start_watching_post(
     database: &Arc<Database>,
     account_id: &AccountId,
+    application_type: &ApplicationType,
     post_descriptor: &PostDescriptor
 ) -> anyhow::Result<StartWatchingPostResult> {
     let account = account_repository::get_account(account_id, database).await?;
@@ -42,11 +43,15 @@ pub async fn start_watching_post(
     }
 
     let account = account.unwrap();
-    if !account.is_valid() {
+    let is_valid = { account.lock().await.is_valid(application_type) };
+
+    if !is_valid {
+        let validation_status = { account.lock().await.validation_status(application_type) };
+
         info!(
             "start_watching_post() account with id \'{}\' is not valid (status: {})",
             account_id.format_token(),
-            account.validation_status().unwrap()
+            validation_status.unwrap()
         );
 
         return Ok(StartWatchingPostResult::AccountIsNotValid);
@@ -82,18 +87,22 @@ pub async fn start_watching_post(
     let query = r#"
         INSERT INTO post_watches(
             owner_post_id,
-            owner_account_id
+            owner_account_id,
+            application_type
         )
-        VALUES ($1, $2)
+        VALUES ($1, $2, $3)
         ON CONFLICT (owner_post_id, owner_account_id) DO NOTHING
         RETURNING id_generated
     "#;
+
+    let account_id_generated = { account.lock().await.id_generated };
 
     let new_watch_inserted = transaction.query_opt(
         query,
         &[
             &owner_post_id,
-            &account.id_generated
+            &account_id_generated,
+            &(application_type.clone() as i64)
         ]
     ).await?.is_some();
 
@@ -106,11 +115,15 @@ pub async fn start_watching_post(
 
     transaction.commit().await?;
 
-    let firebase_token = account.firebase_token.unwrap();
+    let token = {
+        let acc = account.lock().await;
+        acc.get_account_token(application_type).unwrap().clone()
+    };
+
     info!(
         "start_watching_post() Created new post watch for post {} for user with token {}",
         post_descriptor,
-        firebase_token.format_token()
+        token
     );
 
     return Ok(StartWatchingPostResult::Ok);
@@ -119,6 +132,7 @@ pub async fn start_watching_post(
 pub async fn stop_watching_post(
     database: &Arc<Database>,
     account_id: &AccountId,
+    application_type: &ApplicationType,
     post_descriptor: &PostDescriptor
 ) -> anyhow::Result<StopWatchingPostResult> {
     let account = account_repository::get_account(account_id, database).await?;
@@ -132,11 +146,15 @@ pub async fn stop_watching_post(
     }
 
     let account = account.unwrap();
-    if !account.is_valid() {
+    let is_valid = { account.lock().await.is_valid(application_type) };
+
+    if !is_valid {
+        let validation_status = { account.lock().await.validation_status(application_type) };
+
         info!(
             "stop_watching_post() account with id \'{}\' is not valid (status: {})",
             account_id.format_token(),
-            account.validation_status().unwrap()
+            validation_status.unwrap()
         );
 
         return Ok(StopWatchingPostResult::AccountIsNotValid);
@@ -173,17 +191,26 @@ pub async fn stop_watching_post(
         )
     "#;
 
+    let account_id = { account.lock().await.account_id.id.clone() };
+
     let statement = connection.prepare(query).await?;
     let deleted = connection.execute(
         &statement,
-        &[&owner_post_descriptor_id, &account.account_id.id]
+        &[
+            &owner_post_descriptor_id,
+            &account_id
+        ]
     ).await?;
 
-    let firebase_token = account.firebase_token.unwrap();
+    let token = {
+        let acc = account.lock().await;
+        acc.get_account_token(application_type).unwrap().clone()
+    };
+
     info!(
         "stop_watching_post() Deleted {} post watches for user with token {}",
         deleted,
-        firebase_token.format_token()
+        token
     );
 
     return Ok(StopWatchingPostResult::Ok);

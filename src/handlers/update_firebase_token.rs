@@ -9,14 +9,17 @@ use serde::Serialize;
 
 use crate::{error, info};
 use crate::handlers::shared::{ContentType, empty_success_response, error_response_str, error_response_string};
+use crate::helpers::serde_helpers::{deserialize_application_type, serialize_application_type};
 use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
-use crate::model::repository::account_repository::{AccountId, FirebaseToken, UpdateFirebaseTokenResult};
+use crate::model::repository::account_repository::{AccountId, ApplicationType, FirebaseToken, UpdateFirebaseTokenResult};
 
 #[derive(Serialize, Deserialize)]
 pub struct UpdateFirebaseTokenRequest {
     pub user_id: String,
+    #[serde(serialize_with = "serialize_application_type", deserialize_with = "deserialize_application_type")]
+    pub application_type: ApplicationType,
     pub firebase_token: String
 }
 
@@ -36,10 +39,33 @@ pub async fn handle(
     let request: UpdateFirebaseTokenRequest = serde_json::from_str(body_as_string.as_str())
         .context("Failed to convert body into UpdateFirebaseTokenRequest")?;
 
+    let application_type = request.application_type;
+    if application_type == ApplicationType::Unknown {
+        let error_message = format!(
+            "Unsupported \'application_type\' parameter value: {}",
+            application_type as isize
+        );
+
+        error!("update_firebase_token() {}", error_message);
+
+        let response_json = error_response_string(&error_message)?;
+        let response = Response::builder()
+            .json()
+            .status(200)
+            .body(Full::new(Bytes::from(response_json)))?;
+
+        return Ok(response);
+    }
+
     let account_id = AccountId::from_user_id(&request.user_id)?;
     let firebase_token = FirebaseToken::from_str(&request.firebase_token)?;
 
-    let result = account_repository::update_firebase_token(database, &account_id, &firebase_token)
+    let result = account_repository::update_firebase_token(
+        database,
+        &account_id,
+        &application_type,
+        &firebase_token
+    )
         .await
         .context(format!("Failed to update firebase token for account with id \'{}\'", account_id))?;
 

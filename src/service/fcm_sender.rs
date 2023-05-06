@@ -9,8 +9,8 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 use crate::{error, info};
-use crate::helpers::string_helpers::FormatToken;
 use crate::model::database::db::Database;
+use crate::model::repository::account_repository::AccountToken;
 use crate::model::repository::post_reply_repository;
 use crate::model::repository::post_reply_repository::UnsentReply;
 use crate::model::repository::site_repository::SiteRepository;
@@ -67,7 +67,7 @@ impl FcmSender {
             info!(
                 "send_fcm_messages() Got {} unsent replies for user with token {}",
                 unsent_replies_for_token.len(),
-                firebase_token.format_token()
+                firebase_token
             );
         }
 
@@ -80,7 +80,7 @@ impl FcmSender {
         let mut join_handles: Vec<JoinHandle<()>> = Vec::with_capacity(chunk_size);
         let semaphore = Arc::new(tokio::sync::Semaphore::new(chunk_size));
 
-        for (firebase_token, unsent_replies) in unsent_replies {
+        for (account_token, unsent_replies) in unsent_replies {
             if unsent_replies.is_empty() {
                 continue;
             }
@@ -89,14 +89,14 @@ impl FcmSender {
             let successfully_sent_cloned = sent_post_reply_ids_set.clone();
             let failed_to_send_post_reply_ids_cloned = failed_to_send_post_reply_ids_set.clone();
             let firebase_api_key_cloned = firebase_api_key.clone();
-            let firebase_token_cloned = firebase_token.clone();
+            let account_token_cloned = account_token.clone();
             let site_repository_cloned = self.site_repository.clone();
 
             let join_handle = tokio::task::spawn(async move {
                 let result = send_unsent_reply(
                     &FCM_CLIENT,
                     &firebase_api_key_cloned,
-                    &firebase_token_cloned,
+                    &account_token_cloned,
                     &unsent_replies,
                     &successfully_sent_cloned,
                     &failed_to_send_post_reply_ids_cloned,
@@ -153,7 +153,7 @@ impl FcmSender {
 async fn send_unsent_reply(
     client: &fcm::Client,
     firebase_api_key: &String,
-    firebase_token: &String,
+    account_token: &AccountToken,
     unsent_replies: &HashSet<UnsentReply>,
     successfully_sent: &Arc<RwLock<HashSet<i64>>>,
     failed_to_send: &Arc<RwLock<HashSet<i64>>>,
@@ -167,7 +167,7 @@ async fn send_unsent_reply(
     if new_reply_messages.is_empty() {
         info!(
             "send_unsent_reply({}) new_reply_messages is empty",
-            firebase_token.format_token()
+            account_token
         );
 
         return Ok(());
@@ -179,7 +179,7 @@ async fn send_unsent_reply(
 
     info!(
         "send_unsent_reply({}) new_fcm_replies_message: {:?}",
-        firebase_token.format_token(),
+        account_token,
         new_fcm_replies_message
     );
 
@@ -188,7 +188,7 @@ async fn send_unsent_reply(
     let mut map = HashMap::new();
     map.insert("message_body", new_fcm_replies_message_json);
 
-    let mut builder = fcm::MessageBuilder::new(firebase_api_key.as_str(), firebase_token.as_str());
+    let mut builder = fcm::MessageBuilder::new(firebase_api_key.as_str(), account_token.token.as_str());
     builder
         .priority(Priority::High)
         .data(&map)?;
@@ -209,7 +209,7 @@ async fn send_unsent_reply(
         let error = error.unwrap();
         error!(
             "send_unsent_reply({}) Failed to send FCM messages because of error: {:?}",
-            firebase_token.format_token(),
+            account_token,
             error
         );
     } else {
@@ -224,7 +224,7 @@ async fn send_unsent_reply(
 
         info!(
             "send_unsent_reply({}) Successfully sent a batch of {} replies",
-            firebase_token.format_token(),
+            account_token,
             unsent_replies.len(),
         );
     }

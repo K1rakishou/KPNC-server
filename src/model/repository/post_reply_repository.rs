@@ -7,6 +7,7 @@ use crate::{error, info};
 use crate::helpers::db_helpers;
 use crate::model::data::chan::PostDescriptor;
 use crate::model::database::db::Database;
+use crate::model::repository::account_repository::{AccountToken, ApplicationType, TokenType};
 use crate::model::repository::post_descriptor_id_repository;
 use crate::service::thread_watcher::FoundPostReply;
 
@@ -20,14 +21,16 @@ pub struct PostReply {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct UnsentReply {
     pub post_reply_id_generated: i64,
-    pub firebase_token: String,
+    pub token: AccountToken,
     pub post_descriptor: PostDescriptor
 }
 
 impl UnsentReply {
     pub fn from_row(row: &Row) -> anyhow::Result<UnsentReply> {
         let post_reply_id_generated: i64 = row.try_get(0)?;
-        let firebase_token: String = row.try_get(1)?;
+        let token: String = row.try_get(1)?;
+        let application_type: i64 = row.try_get(1)?;
+        let token_type: i64 = row.try_get(1)?;
         let site_name: String = row.try_get(2)?;
         let board_code: String = row.try_get(3)?;
         let thread_no: i64 = row.try_get(4)?;
@@ -42,9 +45,18 @@ impl UnsentReply {
             post_sub_no as u64,
         );
 
+        let application_type = ApplicationType::from_i64(application_type);
+        let token_type = TokenType::from_i64(token_type);
+
+        let account_token = AccountToken {
+            token,
+            application_type,
+            token_type
+        };
+
         let unsent_reply = UnsentReply {
             post_reply_id_generated,
-            firebase_token,
+            token: account_token,
             post_descriptor
         };
 
@@ -116,11 +128,11 @@ pub async fn store(
 pub async fn get_unsent_replies(
     is_dev_build: bool,
     database: &Arc<Database>
-) -> anyhow::Result<HashMap<String, HashSet<UnsentReply>>> {
+) -> anyhow::Result<HashMap<AccountToken, HashSet<UnsentReply>>> {
     let query = r#"
         SELECT
             unsent_post_reply.id_generated,
-            unsent_post_reply.firebase_token,
+            unsent_post_reply.token,
             unsent_post_reply.site_name,
             unsent_post_reply.board_code,
             unsent_post_reply.thread_no,
@@ -130,17 +142,23 @@ pub async fn get_unsent_replies(
         (
             SELECT
                 post_replies.id_generated,
-                account.firebase_token,
+                account_token.token,
                 post_descriptor.site_name,
                 post_descriptor.board_code,
                 post_descriptor.thread_no,
                 post_descriptor.post_no,
                 post_descriptor.post_sub_no
             FROM post_replies
-            LEFT JOIN accounts account
-                ON account.id_generated = post_replies.owner_account_id
-            LEFT JOIN post_descriptors post_descriptor
-                ON post_replies.owner_post_descriptor_id = post_descriptor.id_generated
+                LEFT JOIN accounts account
+                    ON account.id_generated = post_replies.owner_account_id
+                LEFT JOIN account_tokens account_token
+                    ON account_token.owner_account_id = account.id_generated
+                LEFT JOIN post_descriptors post_descriptor
+                    ON post_replies.owner_post_descriptor_id = post_descriptor.id_generated
+                LEFT JOIN posts post
+                    ON post_descriptor.id_generated = post.owner_post_descriptor_id
+                LEFT JOIN post_watches post_watch
+                    ON post.id_generated = post_watch.owner_post_id
             WHERE
                 post_replies.deleted_on IS NULL
             AND
@@ -148,13 +166,13 @@ pub async fn get_unsent_replies(
             AND
                 post_replies.notification_delivered_on IS NULL
             AND
-                account.firebase_token IS NOT NULL
+                post_watch.application_type = account_token.application_type
             AND
                 account.valid_until > now()
             AND
                 account.deleted_on IS NULL
         ) AS unsent_post_reply
-"#;
+    "#;
 
     let connection = database.connection().await?;
     let rows = connection.query(query, &[&MAX_NOTIFICATION_DELIVERY_ATTEMPTS]).await?;
@@ -164,7 +182,7 @@ pub async fn get_unsent_replies(
         return Ok(HashMap::new());
     }
 
-    let mut unsent_replies = HashMap::<String, HashSet<UnsentReply>>::with_capacity(rows.len());
+    let mut unsent_replies = HashMap::<AccountToken, HashSet<UnsentReply>>::with_capacity(rows.len());
     let mut error_logged = false;
 
     for row in rows {
@@ -184,11 +202,11 @@ pub async fn get_unsent_replies(
 
         let unsent_reply = unsent_reply.unwrap();
 
-        if !unsent_replies.contains_key(&unsent_reply.firebase_token) {
-            unsent_replies.insert(unsent_reply.firebase_token.clone(), HashSet::with_capacity(16));
+        if !unsent_replies.contains_key(&unsent_reply.token) {
+            unsent_replies.insert(unsent_reply.token.clone(), HashSet::with_capacity(16));
         }
 
-        unsent_replies.get_mut(&unsent_reply.firebase_token)
+        unsent_replies.get_mut(&unsent_reply.token)
             .unwrap()
             .insert(unsent_reply.clone());
     }
