@@ -1,12 +1,12 @@
-drop table if exists migrations;
-drop table if exists logs;
-drop table if exists accounts;
-drop table if exists account_tokens;
-drop table if exists threads;
-drop table if exists posts;
-drop table if exists post_descriptors;
-drop table if exists post_replies;
-drop table if exists post_watches;
+drop table if exists migrations cascade;
+drop table if exists logs cascade;
+drop table if exists accounts cascade;
+drop table if exists account_tokens cascade;
+drop table if exists threads cascade;
+drop table if exists posts cascade;
+drop table if exists post_descriptors cascade;
+drop table if exists post_replies cascade;
+drop table if exists post_watches cascade;
 
 create table migrations
 (
