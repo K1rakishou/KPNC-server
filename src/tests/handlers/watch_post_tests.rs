@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::handlers::shared::EmptyResponse;
-    use crate::model::repository::account_repository::AccountId;
+    use crate::model::repository::account_repository::{AccountId, ApplicationType};
     use crate::test_case;
     use crate::tests::shared::{account_repository_shared, database_shared, watch_post_repository_shared};
     use crate::tests::shared::shared::{run_test, TestCase};
@@ -23,11 +23,13 @@ mod tests {
     }
 
     async fn should_not_watch_post_if_account_does_not_exist() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
             user_id1,
-            "https://boards.4channel.org/vg/thread/426895061#p426901491"
+            "https://boards.4channel.org/vg/thread/426895061#p426901491",
+            &application_type
         ).await.unwrap();
 
         assert!(server_response.data.is_none());
@@ -36,13 +38,15 @@ mod tests {
     }
 
     async fn should_not_watch_post_if_account_is_expired() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         account_repository_shared::create_expired_account::<EmptyResponse>(user_id1, 1).await.unwrap();
 
         let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
             user_id1,
-            "https://boards.4channel.org/vg/thread/426895061#p426901491"
+            "https://boards.4channel.org/vg/thread/426895061#p426901491",
+            &application_type
         ).await.unwrap();
 
         assert!(server_response.data.is_none());
@@ -54,11 +58,13 @@ mod tests {
     }
 
     async fn should_not_watch_post_if_site_is_not_supported() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
             user_id1,
-            "https://2ch.hk/vg/thread/426895061#p426901491"
+            "https://2ch.hk/vg/thread/426895061#p426901491",
+            &application_type
         ).await.unwrap();
 
         assert!(server_response.data.is_none());
@@ -70,11 +76,13 @@ mod tests {
     }
 
     async fn should_not_watch_post_if_link_is_unparseable() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
             user_id1,
-            "https://boards.4channel.org/vg/thread/4268<BAM>95061#p426901491"
+            "https://boards.4channel.org/vg/thread/4268<BAM>95061#p426901491",
+            &application_type
         ).await.unwrap();
 
         assert!(server_response.data.is_none());
@@ -86,11 +94,13 @@ mod tests {
     }
 
     async fn should_not_watch_post_if_link_is_too_short() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
             user_id1,
-            ""
+            "",
+            &application_type
         ).await.unwrap();
 
         assert!(server_response.data.is_none());
@@ -102,11 +112,16 @@ mod tests {
     }
 
     async fn should_not_watch_post_if_link_is_too_long() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
             user_id1,
-            "https://boards.4channel.org/vg/111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+            "https://boards.4channel.org/vg/11111111111111111111111111111111111111111111111111111111\
+            1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\
+            11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\
+            1111111111111111111111111111111111111",
+            &application_type
         ).await.unwrap();
 
         assert!(server_response.data.is_none());
@@ -118,6 +133,7 @@ mod tests {
     }
 
     async fn should_start_watching_post_if_params_are_good() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
         let user_id2 = &account_repository_shared::TEST_GOOD_USER_ID2;
 
@@ -132,7 +148,8 @@ mod tests {
         {
             let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
                 user_id1,
-                "https://boards.4channel.org/vg/thread/426895061#p426901491"
+                "https://boards.4channel.org/vg/thread/426895061#p426901491",
+                &application_type
             ).await.unwrap();
 
             assert!(server_response.data.is_some());
@@ -156,7 +173,8 @@ mod tests {
         {
             let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
                 user_id2,
-                "https://boards.4channel.org/vg/thread/426895061#p426901492"
+                "https://boards.4channel.org/vg/thread/426895061#p426901492",
+                &application_type
             ).await.unwrap();
 
             assert!(server_response.data.is_some());
@@ -179,6 +197,7 @@ mod tests {
     }
 
     async fn should_not_create_duplicates_when_one_post_is_watched_multiple_times() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
         let user_id2 = &account_repository_shared::TEST_GOOD_USER_ID2;
 
@@ -193,7 +212,8 @@ mod tests {
         {
             let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
                 user_id1,
-                "https://boards.4channel.org/vg/thread/426895061#p426901491"
+                "https://boards.4channel.org/vg/thread/426895061#p426901491",
+                &application_type
             ).await.unwrap();
 
             assert!(server_response.data.is_some());
@@ -201,7 +221,8 @@ mod tests {
 
             let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
                 user_id1,
-                "https://boards.4channel.org/vg/thread/426895061#p426901491"
+                "https://boards.4channel.org/vg/thread/426895061#p426901491",
+                &application_type
             ).await.unwrap();
 
             assert!(server_response.data.is_some());
@@ -225,7 +246,8 @@ mod tests {
         {
             let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
                 user_id2,
-                "https://boards.4channel.org/vg/thread/426895061#p426901492"
+                "https://boards.4channel.org/vg/thread/426895061#p426901492",
+                &application_type
             ).await.unwrap();
 
             assert!(server_response.data.is_some());
@@ -233,7 +255,8 @@ mod tests {
 
             let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
                 user_id2,
-                "https://boards.4channel.org/vg/thread/426895061#p426901492"
+                "https://boards.4channel.org/vg/thread/426895061#p426901492",
+                &application_type
             ).await.unwrap();
 
             assert!(server_response.data.is_some());

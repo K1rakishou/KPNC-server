@@ -2,7 +2,7 @@
 mod tests {
     use crate::handlers::shared::EmptyResponse;
     use crate::model::repository::account_repository;
-    use crate::model::repository::account_repository::AccountId;
+    use crate::model::repository::account_repository::{AccountId, ApplicationType};
     use crate::test_case;
     use crate::tests::shared::{account_repository_shared, database_shared};
     use crate::tests::shared::shared::{run_test, TestCase};
@@ -150,6 +150,7 @@ mod tests {
     }
 
     async fn should_create_account_when_parameters_are_good() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id = &account_repository_shared::TEST_GOOD_USER_ID1;
         let account_id = AccountId::from_user_id(user_id).unwrap();
         let database = database_shared::database();
@@ -169,7 +170,7 @@ mod tests {
 
         assert_eq!(1, from_cache.id);
         assert_eq!(account_id.id, from_cache.account_id.id);
-        assert!(&from_cache.firebase_token().is_none());
+        assert!(&from_cache.account_token(&application_type).is_none());
         assert!(&from_cache.valid_until.is_some());
 
         let from_database = account_repository_shared::get_account_from_database(user_id, database)
@@ -179,11 +180,13 @@ mod tests {
 
         assert_eq!(1, from_database.id);
         assert_eq!(account_id.id, from_database.account_id.id);
-        assert!(&from_database.firebase_token().is_none());
+        assert!(&from_database.account_token(&application_type).is_none());
         assert!(&from_database.valid_until.is_some());
     }
 
     async fn should_create_multiple_accounts_when_parameters_are_good() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
+
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
         let user_id2 = &account_repository_shared::TEST_GOOD_USER_ID2;
         let account_id1 = AccountId::from_user_id(user_id1).unwrap();
@@ -206,7 +209,7 @@ mod tests {
 
             assert_eq!(1, from_cache.id);
             assert_eq!(account_id1.id, from_cache.account_id.id);
-            assert!(&from_cache.firebase_token().is_none());
+            assert!(&from_cache.account_token(&application_type).is_none());
             assert!(&from_cache.valid_until.is_some());
 
             let from_database = account_repository_shared::get_account_from_database(user_id1, database)
@@ -216,7 +219,7 @@ mod tests {
 
             assert_eq!(1, from_database.id);
             assert_eq!(account_id1.id, from_database.account_id.id);
-            assert!(&from_database.firebase_token().is_none());
+            assert!(&from_database.account_token(&application_type).is_none());
             assert!(&from_database.valid_until.is_some());
         }
 
@@ -236,7 +239,7 @@ mod tests {
 
             assert_eq!(2, from_cache.id);
             assert_eq!(account_id2.id, from_cache.account_id.id);
-            assert!(&from_cache.firebase_token().is_none());
+            assert!(&from_cache.account_token(&application_type).is_none());
             assert!(&from_cache.valid_until.is_some());
 
             let from_database = account_repository_shared::get_account_from_database(user_id2, database)
@@ -246,7 +249,7 @@ mod tests {
 
             assert_eq!(2, from_database.id);
             assert_eq!(account_id2.id, from_database.account_id.id);
-            assert!(&from_database.firebase_token().is_none());
+            assert!(&from_database.account_token(&application_type).is_none());
             assert!(&from_database.valid_until.is_some());
         }
     }

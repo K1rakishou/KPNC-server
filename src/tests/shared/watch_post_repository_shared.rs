@@ -6,7 +6,7 @@ use crate::handlers::shared::{ServerResponse, ServerSuccessResponse};
 use crate::handlers::watch_post::WatchPostRequest;
 use crate::model::data::chan::PostDescriptor;
 use crate::model::database::db::Database;
-use crate::model::repository::account_repository::AccountId;
+use crate::model::repository::account_repository::{AccountId, ApplicationType};
 use crate::tests::shared::http_client_shared;
 
 pub struct TestPostWatch {
@@ -16,11 +16,13 @@ pub struct TestPostWatch {
 
 pub async fn watch_post<'a, T : DeserializeOwned + ServerSuccessResponse>(
     user_id: &str,
-    post_url: &str
+    post_url: &str,
+    application_type: &ApplicationType
 ) -> anyhow::Result<ServerResponse<T>> {
     let request = WatchPostRequest {
         user_id: user_id.to_string(),
-        post_url: post_url.to_string()
+        post_url: post_url.to_string(),
+        application_type: application_type.clone()
     };
 
     let body = serde_json::to_string(&request).unwrap();

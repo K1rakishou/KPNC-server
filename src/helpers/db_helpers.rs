@@ -38,7 +38,7 @@ pub fn format_query_params_with_start_index<'a, T : ToSql + Sync>(
 
     for _ in 0..params_count {
         string_builder.append(format!("${}", index));
-        if index < params_count {
+        if index < (params_count + start_index) {
             string_builder.append(", ");
         }
 
@@ -67,4 +67,40 @@ fn test_format_query_params_string() {
 
     assert_eq!("SELECT * FROM test WHERE test.id IN ($1, $2, $3, $4, $5)", query);
     assert_eq!(5, db_params.len());
+}
+
+#[test]
+fn test_format_query_params_string_with_bug() {
+    let query = r#"
+        SELECT
+            post_replies.id
+        FROM post_replies
+        INNER JOIN accounts account on account.id = post_replies.owner_account_id
+        WHERE
+            account.account_id = $1
+        AND
+            post_replies.id IN ({QUERY_PARAMS})
+    "#;
+
+    let params = vec![1, 3, 2];
+    let (query, db_params) = format_query_params_with_start_index(
+        query,
+        "{QUERY_PARAMS}",
+        1,
+        &params
+    ).unwrap();
+
+    let expected = r#"
+        SELECT
+            post_replies.id
+        FROM post_replies
+        INNER JOIN accounts account on account.id = post_replies.owner_account_id
+        WHERE
+            account.account_id = $1
+        AND
+            post_replies.id IN ($2, $3, $4)
+    "#;
+
+    assert_eq!(expected, query);
+    assert_eq!(3, db_params.len());
 }

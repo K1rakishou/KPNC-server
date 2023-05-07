@@ -574,12 +574,7 @@ pub async fn retain_post_db_ids_belonging_to_account(
         reply_ids
     )?;
 
-
     db_params.insert(0, &account_id.id);
-
-
-    info!("TTTAAA query: {}", query);
-    info!("TTTAAA db_params: {:?}", db_params);
 
     let statement = connection.prepare(&query).await?;
 

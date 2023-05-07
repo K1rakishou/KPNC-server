@@ -6,7 +6,7 @@ mod tests {
     use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
     use crate::model::database::db::Database;
     use crate::model::repository::{account_repository, post_descriptor_id_repository, post_repository};
-    use crate::model::repository::account_repository::{AccountId, FirebaseToken};
+    use crate::model::repository::account_repository::{AccountId, ApplicationType, FirebaseToken};
     use crate::service::thread_watcher;
     use crate::service::thread_watcher::FoundPostReply;
     use crate::test_case;
@@ -30,6 +30,7 @@ mod tests {
     }
 
     async fn test_one_account_watches_one_post() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let database = database_shared::database();
 
         let account_id = AccountId::from_user_id("111111111111111111111111111111111111").unwrap();
@@ -58,12 +59,14 @@ mod tests {
             account_repository::update_firebase_token(
                 database,
                 &account_id,
+                &application_type,
                 &firebase_token
             ).await.unwrap();
 
             post_repository::start_watching_post(
                 database,
                 &account_id,
+                &application_type,
                 &watched_post
             ).await.unwrap();
         }
@@ -85,6 +88,7 @@ mod tests {
     }
 
     async fn test_two_accounts_watch_two_posts() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let database = database_shared::database();
 
         let account_id1 = AccountId::from_user_id("111111111111111111111111111111111111").unwrap();
@@ -126,24 +130,28 @@ mod tests {
             account_repository::update_firebase_token(
                 database,
                 &account_id1,
+                &application_type,
                 &firebase_token1
             ).await.unwrap();
 
             account_repository::update_firebase_token(
                 database,
                 &account_id2,
+                &application_type,
                 &firebase_token2
             ).await.unwrap();
 
             post_repository::start_watching_post(
                 database,
                 &account_id1,
+                &application_type,
                 &watched_post1
             ).await.unwrap();
 
             post_repository::start_watching_post(
                 database,
                 &account_id2,
+                &application_type,
                 &watched_post2
             ).await.unwrap();
         }
@@ -170,6 +178,7 @@ mod tests {
     }
 
     async fn test_two_accounts_watch_the_same_post() {
+        let application_type = ApplicationType::KurobaExLiteDebug;
         let database = database_shared::database();
 
         let account_id1 = AccountId::from_user_id("111111111111111111111111111111111111").unwrap();
@@ -206,24 +215,28 @@ mod tests {
             account_repository::update_firebase_token(
                 database,
                 &account_id1,
+                &application_type,
                 &firebase_token1
             ).await.unwrap();
 
             account_repository::update_firebase_token(
                 database,
                 &account_id2,
+                &application_type,
                 &firebase_token2
             ).await.unwrap();
 
             post_repository::start_watching_post(
                 database,
                 &account_id1,
+                &application_type,
                 &watched_post
             ).await.unwrap();
 
             post_repository::start_watching_post(
                 database,
                 &account_id2,
+                &application_type,
                 &watched_post
             ).await.unwrap();
         }

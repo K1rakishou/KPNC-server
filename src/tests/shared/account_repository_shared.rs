@@ -10,7 +10,7 @@ use crate::handlers::shared::{EmptyResponse, ServerResponse, ServerSuccessRespon
 use crate::handlers::update_firebase_token::UpdateFirebaseTokenRequest;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository;
-use crate::model::repository::account_repository::{Account, AccountId};
+use crate::model::repository::account_repository::{Account, AccountId, ApplicationType};
 use crate::tests::shared::{account_repository_shared, database_shared, http_client_shared};
 
 lazy_static! {
@@ -52,7 +52,11 @@ pub async fn create_expired_account<'a, T : DeserializeOwned + ServerSuccessResp
 
     let database = database_shared::database();
 
-    let mut account = account_repository::test_get_account_from_cache(&account_id).await.unwrap();
+    let account_mutex = account_repository::test_get_account_from_cache(&account_id)
+        .await
+        .unwrap();
+    let mut account = account_mutex.lock().await;
+
     let new_valid_until = account.valid_until.unwrap() - Duration::days(3);
     account.valid_until = Some(new_valid_until);
 
@@ -70,10 +74,12 @@ pub async fn create_expired_account<'a, T : DeserializeOwned + ServerSuccessResp
 }
 
 pub async fn get_account_info<'a, T : DeserializeOwned + ServerSuccessResponse>(
-    user_id: &str
+    user_id: &str,
+    application_type: &ApplicationType
 ) -> anyhow::Result<ServerResponse<T>> {
     let request = AccountInfoRequest {
-        user_id: user_id.to_string()
+        user_id: user_id.to_string(),
+        application_type: application_type.clone()
     };
 
     let body = serde_json::to_string(&request).unwrap();
@@ -88,11 +94,13 @@ pub async fn get_account_info<'a, T : DeserializeOwned + ServerSuccessResponse>(
 
 pub async fn update_firebase_token<'a, T : DeserializeOwned + ServerSuccessResponse>(
     user_id: &str,
-    firebase_token: &str
+    firebase_token: &str,
+    application_type: &ApplicationType
 ) -> anyhow::Result<ServerResponse<T>> {
     let request = UpdateFirebaseTokenRequest {
         user_id: user_id.to_string(),
-        firebase_token: firebase_token.to_string()
+        firebase_token: firebase_token.to_string(),
+        application_type: application_type.clone()
     };
 
     let body = serde_json::to_string(&request).unwrap();
@@ -107,8 +115,14 @@ pub async fn update_firebase_token<'a, T : DeserializeOwned + ServerSuccessRespo
 
 pub async fn get_account_from_cache(user_id: &str) -> anyhow::Result<Option<Account>> {
     let account_id = AccountId::test_unsafe(user_id)?;
+
     let account = account_repository::test_get_account_from_cache(&account_id).await;
-    return Ok(account);
+    if account.is_none() {
+        return Ok(None);
+    }
+
+    let account = account.unwrap().lock().await.clone();
+    return Ok(Some(account));
 }
 
 pub async fn get_account_from_database(
