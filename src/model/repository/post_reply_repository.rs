@@ -303,6 +303,9 @@ pub async fn mark_post_replies_as_notified(
         &sent_post_reply_ids
     )?;
 
+    info!("TTTAAA query: {}", query);
+    info!("TTTAAA db_params: {:?}", db_params);
+
     let connection = database.connection().await?;
     let statement = connection.prepare(&query).await?;
     connection.execute(&statement, &db_params[..]).await?;
