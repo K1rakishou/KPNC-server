@@ -16,6 +16,7 @@ use crate::model::repository::post_reply_repository::PostReply;
 pub enum StartWatchingPostResult {
     Ok,
     AccountDoesNotExist,
+    AccountHasNoToken,
     AccountIsNotValid
 }
 
@@ -43,8 +44,18 @@ pub async fn start_watching_post(
     }
 
     let account = account.unwrap();
-    let is_valid = { account.lock().await.is_valid(application_type) };
 
+    let has_token = { account.lock().await.account_token(application_type).is_some() };
+    if !has_token {
+        info!(
+            "start_watching_post() account with id \'{}\' has no token",
+            account_id.format_token(),
+        );
+
+        return Ok(StartWatchingPostResult::AccountHasNoToken);
+    }
+
+    let is_valid = { account.lock().await.is_valid(application_type) };
     if !is_valid {
         let validation_status = { account.lock().await.validation_status(application_type) };
 

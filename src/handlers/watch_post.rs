@@ -111,6 +111,7 @@ pub async fn handle(
         let error_message = match post_watch_created_result {
             StartWatchingPostResult::Ok => unreachable!(),
             StartWatchingPostResult::AccountDoesNotExist => "Account does not exist",
+            StartWatchingPostResult::AccountHasNoToken => "Account has no token",
             StartWatchingPostResult::AccountIsNotValid => "Account already expired",
         };
 

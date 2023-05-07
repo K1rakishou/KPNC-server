@@ -1,22 +1,15 @@
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::sync::Arc;
 
     use crate::model::data::chan::{PostDescriptor, ThreadDescriptor};
-    use crate::model::database::db::Database;
-    use crate::model::repository::{account_repository, post_descriptor_id_repository, post_repository};
-    use crate::model::repository::account_repository::{AccountId, ApplicationType, FirebaseToken};
+    use crate::model::repository::{account_repository, post_reply_repository, post_repository};
+    use crate::model::repository::account_repository::{AccountId, AccountToken, ApplicationType, FirebaseToken, TokenType};
     use crate::service::thread_watcher;
     use crate::service::thread_watcher::FoundPostReply;
     use crate::test_case;
     use crate::tests::shared::database_shared;
     use crate::tests::shared::shared::{run_test, TestCase};
-
-    struct PostReply {
-        account_id: AccountId,
-        post_descriptor: PostDescriptor
-    }
 
     #[tokio::test]
     async fn run_tests() {
@@ -77,14 +70,27 @@ mod tests {
             database,
         ).await.unwrap();
 
-        let post_replies = load_post_replies(database).await.unwrap();
+        let unsent_replies = post_reply_repository::get_unsent_replies(
+            true,
+            database
+        ).await.unwrap();
 
-        assert_eq!(1, post_replies.len());
-        let post_reply = post_replies.first().unwrap();
+        assert_eq!(1, unsent_replies.len());
 
-        assert_eq!(account_id.id, post_reply.account_id.id);
-        assert_eq!(thread_descriptor, post_reply.post_descriptor.thread_descriptor);
-        assert_eq!(2, post_reply.post_descriptor.post_no);
+        let replies = unsent_replies.iter()
+            .take(1)
+            .collect::<Vec<_>>();
+        let (account_token, unsent_replies_set) = replies.first().unwrap();
+
+        assert_eq!(firebase_token.token, account_token.token);
+        assert_eq!(application_type, account_token.application_type);
+        assert_eq!(TokenType::Firebase, account_token.token_type);
+
+        assert_eq!(1, unsent_replies_set.len());
+        let unsent_reply = unsent_replies_set.iter().next().unwrap();
+
+        assert_eq!(1, unsent_reply.post_reply_id);
+        assert_eq!(2, unsent_reply.post_descriptor.post_no);
     }
 
     async fn test_two_accounts_watch_two_posts() {
@@ -121,6 +127,20 @@ mod tests {
                 Some(valid_until)
             ).await.unwrap();
 
+            account_repository::update_firebase_token(
+                database,
+                &account_id1,
+                &application_type,
+                &firebase_token1
+            ).await.unwrap();
+
+            post_repository::start_watching_post(
+                database,
+                &account_id1,
+                &application_type,
+                &watched_post1
+            ).await.unwrap();
+
             account_repository::create_account(
                 database,
                 &account_id2,
@@ -129,23 +149,9 @@ mod tests {
 
             account_repository::update_firebase_token(
                 database,
-                &account_id1,
-                &application_type,
-                &firebase_token1
-            ).await.unwrap();
-
-            account_repository::update_firebase_token(
-                database,
                 &account_id2,
                 &application_type,
                 &firebase_token2
-            ).await.unwrap();
-
-            post_repository::start_watching_post(
-                database,
-                &account_id1,
-                &application_type,
-                &watched_post1
             ).await.unwrap();
 
             post_repository::start_watching_post(
@@ -162,19 +168,50 @@ mod tests {
             database,
         ).await.unwrap();
 
-        let post_replies = load_post_replies(database).await.unwrap();
+        let unsent_replies = post_reply_repository::get_unsent_replies(
+            true,
+            database
+        ).await.unwrap();
 
-        assert_eq!(2, post_replies.len());
-        let post_reply1 = post_replies.first().unwrap();
-        let post_reply2 = post_replies.last().unwrap();
+        assert_eq!(2, unsent_replies.len());
 
-        assert_eq!(account_id1.id, post_reply1.account_id.id);
-        assert_eq!(thread_descriptor, post_reply1.post_descriptor.thread_descriptor);
-        assert_eq!(3, post_reply1.post_descriptor.post_no);
+        {
+            let (account_token, unsent_replies_set) = unsent_replies
+                .iter()
+                .find(|(token, _)| token.token == firebase_token1.token)
+                .unwrap();
 
-        assert_eq!(account_id2.id, post_reply2.account_id.id);
-        assert_eq!(thread_descriptor, post_reply2.post_descriptor.thread_descriptor);
-        assert_eq!(4, post_reply2.post_descriptor.post_no);
+            assert_eq!(firebase_token1.token, account_token.token);
+            assert_eq!(application_type, account_token.application_type);
+            assert_eq!(TokenType::Firebase, account_token.token_type);
+
+            let unsent_reply = unsent_replies_set
+                .iter()
+                .find(|unsent_reply| unsent_reply.post_reply_id == 2)
+                .unwrap();
+
+            assert_eq!(2, unsent_reply.post_reply_id);
+            assert_eq!(3, unsent_reply.post_descriptor.post_no);
+        }
+
+        {
+            let (account_token, unsent_replies_set) = unsent_replies
+                .iter()
+                .find(|(token, _)| token.token == firebase_token2.token)
+                .unwrap();
+
+            assert_eq!(firebase_token2.token, account_token.token);
+            assert_eq!(application_type, account_token.application_type);
+            assert_eq!(TokenType::Firebase, account_token.token_type);
+
+            let unsent_reply = unsent_replies_set
+                .iter()
+                .find(|unsent_reply| unsent_reply.post_reply_id == 1)
+                .unwrap();
+
+            assert_eq!(1, unsent_reply.post_reply_id);
+            assert_eq!(4, unsent_reply.post_descriptor.post_no);
+        }
     }
 
     async fn test_two_accounts_watch_the_same_post() {
@@ -247,91 +284,50 @@ mod tests {
             database,
         ).await.unwrap();
 
-        let post_replies = load_post_replies(database).await.unwrap();
+        let unsent_replies = post_reply_repository::get_unsent_replies(
+            true,
+            database
+        ).await.unwrap();
 
-        assert_eq!(2, post_replies.len());
-        let post_reply1 = post_replies.first().unwrap();
-        let post_reply2 = post_replies.last().unwrap();
+        assert_eq!(2, unsent_replies.len());
 
-        assert_eq!(account_id1.id, post_reply1.account_id.id);
-        assert_eq!(thread_descriptor, post_reply1.post_descriptor.thread_descriptor);
-        assert_eq!(2, post_reply1.post_descriptor.post_no);
+        {
+            let (account_token, unsent_replies_set) = unsent_replies
+                .iter()
+                .find(|(token, _)| token.token == firebase_token1.token)
+                .unwrap();
 
-        assert_eq!(account_id2.id, post_reply2.account_id.id);
-        assert_eq!(thread_descriptor, post_reply2.post_descriptor.thread_descriptor);
-        assert_eq!(2, post_reply2.post_descriptor.post_no);
-    }
+            assert_eq!(firebase_token1.token, account_token.token);
+            assert_eq!(application_type, account_token.application_type);
+            assert_eq!(TokenType::Firebase, account_token.token_type);
 
-    async fn load_post_replies(database: &Arc<Database>) -> anyhow::Result<Vec<PostReply>> {
-        let query = r#"
-            SELECT owner_account_id, owner_post_descriptor_id
-            FROM post_replies
-        "#;
+            let unsent_reply = unsent_replies_set
+                .iter()
+                .find(|unsent_reply| unsent_reply.post_reply_id == 1)
+                .unwrap();
 
-        let connection = database.connection().await?;
-        let statement = connection.prepare(query).await?;
-
-        let rows = connection.query(&statement, &[]).await?;
-        if rows.is_empty() {
-            return Ok(vec![]);
+            assert_eq!(1, unsent_reply.post_reply_id);
+            assert_eq!(2, unsent_reply.post_descriptor.post_no);
         }
 
-        let mut result_vec = Vec::<PostReply>::with_capacity(rows.len());
+        {
+            let (account_token, unsent_replies_set) = unsent_replies
+                .iter()
+                .find(|(token, _)| token.token == firebase_token2.token)
+                .unwrap();
 
-        for row in rows {
-            let owner_account_id: i64 = row.get(0);
-            let owner_post_descriptor_id: i64 = row.get(1);
+            assert_eq!(firebase_token2.token, account_token.token);
+            assert_eq!(application_type, account_token.application_type);
+            assert_eq!(TokenType::Firebase, account_token.token_type);
 
-            let query = r#"
-                SELECT account_id
-                FROM accounts
-                WHERE accounts.id = $1
-            "#;
+            let unsent_reply = unsent_replies_set
+                .iter()
+                .find(|unsent_reply| unsent_reply.post_reply_id == 2)
+                .unwrap();
 
-            let statement = connection.prepare(query).await?;
-
-            let account_id_row = connection.query_one(&statement, &[&owner_account_id]).await?;
-            let account_id_string: String = account_id_row.get(0);
-            let account_id = AccountId::new(account_id_string);
-
-            let query = r#"
-                SELECT site_name, board_code, thread_no, post_no, post_sub_no
-                FROM post_descriptors
-                WHERE post_descriptors.id = $1
-            "#;
-
-            let statement = connection.prepare(query).await?;
-
-            let rows = connection.query(&statement, &[&owner_post_descriptor_id]).await?;
-
-            let post_descriptors = rows.iter().map(|pd_row| {
-                let site_name: String = pd_row.get(0);
-                let board_code: String = pd_row.get(1);
-                let thread_no: i64 = pd_row.get(2);
-                let post_no: i64 = pd_row.get(3);
-                let post_sub_no: i64 = pd_row.get(4);
-
-                let post_descriptor = PostDescriptor::new(
-                    site_name,
-                    board_code,
-                    thread_no as u64,
-                    post_no as u64,
-                    post_sub_no as u64
-                );
-
-                return post_descriptor;
-            }).collect::<Vec<PostDescriptor>>();
-
-            post_descriptors.iter().for_each(|pd| {
-                let post_reply = PostReply {
-                    account_id: account_id.clone(),
-                    post_descriptor: pd.clone(),
-                };
-
-                result_vec.push(post_reply);
-            });
+            assert_eq!(2, unsent_reply.post_reply_id);
+            assert_eq!(2, unsent_reply.post_descriptor.post_no);
         }
-
-        return Ok(result_vec);
     }
+
 }

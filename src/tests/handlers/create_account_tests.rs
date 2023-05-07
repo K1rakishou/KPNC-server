@@ -5,6 +5,7 @@ mod tests {
     use crate::model::repository::account_repository::{AccountId, ApplicationType};
     use crate::test_case;
     use crate::tests::shared::{account_repository_shared, database_shared};
+    use crate::tests::shared::server_shared::TEST_MASTER_PASSWORD;
     use crate::tests::shared::shared::{run_test, TestCase};
 
     #[tokio::test]
@@ -27,6 +28,7 @@ mod tests {
         let database = database_shared::database();
 
         let server_response = account_repository_shared::create_account::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id,
             1
         ).await.unwrap();
@@ -51,6 +53,7 @@ mod tests {
         let database = database_shared::database();
 
         let server_response = account_repository_shared::create_account::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id,
             1
         ).await.unwrap();
@@ -75,6 +78,7 @@ mod tests {
         let database = database_shared::database();
 
         let server_response = account_repository_shared::create_account::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id,
             0
         ).await.unwrap();
@@ -99,6 +103,7 @@ mod tests {
         let database = database_shared::database();
 
         let server_response = account_repository_shared::create_account::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id,
             1000
         ).await.unwrap();
@@ -124,6 +129,7 @@ mod tests {
 
         {
             let server_response = account_repository_shared::create_account::<EmptyResponse>(
+                TEST_MASTER_PASSWORD,
                 user_id1,
                 1,
             ).await.unwrap();
@@ -132,6 +138,7 @@ mod tests {
             assert!(server_response.error.is_none());
 
             let server_response = account_repository_shared::create_account::<EmptyResponse>(
+                TEST_MASTER_PASSWORD,
                 user_id1,
                 1,
             ).await.unwrap();
@@ -156,6 +163,7 @@ mod tests {
         let database = database_shared::database();
 
         let server_response = account_repository_shared::create_account::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id,
             1
         ).await.unwrap();
@@ -195,6 +203,7 @@ mod tests {
 
         {
             let server_response = account_repository_shared::create_account::<EmptyResponse>(
+                TEST_MASTER_PASSWORD,
                 user_id1,
                 1,
             ).await.unwrap();
@@ -225,6 +234,7 @@ mod tests {
 
         {
             let server_response = account_repository_shared::create_account::<EmptyResponse>(
+                TEST_MASTER_PASSWORD,
                 user_id2,
                 1,
             ).await.unwrap();

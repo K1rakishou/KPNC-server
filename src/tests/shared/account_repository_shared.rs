@@ -20,13 +20,16 @@ lazy_static! {
     pub static ref TEST_GOOD_USER_ID1: String = String::from("11111111111111111111111111111111111");
     pub static ref TEST_GOOD_USER_ID2: String = String::from("22222222222222222222222222222222222");
 
+    pub static ref TEST_GOOD_FIREBASE_TOKEN1: String = String::from("1111111111111111111111111111111111111111111111111111111111111111111111");
+    pub static ref TEST_GOOD_FIREBASE_TOKEN2: String = String::from("2222222222222222222222222222222222222222222222222222222222222222222222");
     pub static ref TEST_VERY_SHORT_FIREBASE_TOKEN: String = String::from("");
     pub static ref TEST_VERY_LONG_FIREBASE_TOKEN: String = String::from("22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222");
 }
 
 pub async fn create_account<'a, T : DeserializeOwned + ServerSuccessResponse>(
+    master_password: &str,
     user_id: &str,
-    valid_for_days: u64
+    valid_for_days: u64,
 ) -> anyhow::Result<ServerResponse<T>> {
     let request = CreateNewAccountRequest {
         user_id: user_id.to_string(),
@@ -37,17 +40,19 @@ pub async fn create_account<'a, T : DeserializeOwned + ServerSuccessResponse>(
 
     let response = http_client_shared::post_request::<ServerResponse<T>>(
         "create_account",
-        &body
+        &body,
+        master_password
     ).await?;
 
     return Ok(response);
 }
 
 pub async fn create_expired_account<'a, T : DeserializeOwned + ServerSuccessResponse>(
+    master_password: &str,
     user_id: &str,
     valid_for_days: u64
 ) -> anyhow::Result<()> {
-    let _ = create_account::<T>(user_id, valid_for_days).await?;
+    let _ = create_account::<T>(master_password, user_id, valid_for_days).await?;
     let account_id = AccountId::test_unsafe(user_id)?;
 
     let database = database_shared::database();
@@ -74,6 +79,7 @@ pub async fn create_expired_account<'a, T : DeserializeOwned + ServerSuccessResp
 }
 
 pub async fn get_account_info<'a, T : DeserializeOwned + ServerSuccessResponse>(
+    master_password: &str,
     user_id: &str,
     application_type: &ApplicationType
 ) -> anyhow::Result<ServerResponse<T>> {
@@ -86,13 +92,15 @@ pub async fn get_account_info<'a, T : DeserializeOwned + ServerSuccessResponse>(
 
     let response = http_client_shared::post_request::<ServerResponse<T>>(
         "get_account_info",
-        &body
+        &body,
+        master_password,
     ).await?;
 
     return Ok(response);
 }
 
 pub async fn update_firebase_token<'a, T : DeserializeOwned + ServerSuccessResponse>(
+    master_password: &str,
     user_id: &str,
     firebase_token: &str,
     application_type: &ApplicationType
@@ -107,7 +115,8 @@ pub async fn update_firebase_token<'a, T : DeserializeOwned + ServerSuccessRespo
 
     let response = http_client_shared::post_request::<ServerResponse<T>>(
         "update_firebase_token",
-        &body
+        &body,
+        master_password
     ).await?;
 
     return Ok(response);
@@ -134,10 +143,28 @@ pub async fn get_account_from_database(
     return Ok(account)
 }
 
-pub async fn create_account_actual(user_id: &String) {
+pub async fn create_account_actual(master_password: &str, user_id: &String) {
     let server_response = account_repository_shared::create_account::<EmptyResponse>(
+        master_password,
         user_id,
         1
+    ).await.unwrap();
+
+    assert!(server_response.data.is_some());
+    assert!(server_response.error.is_none());
+}
+
+pub async fn update_token_actual(
+    master_password: &str,
+    user_id: &String,
+    firebase_token: &String,
+    application_type: &ApplicationType
+) {
+    let server_response = account_repository_shared::update_firebase_token::<EmptyResponse>(
+        master_password,
+        user_id,
+        firebase_token,
+        application_type
     ).await.unwrap();
 
     assert!(server_response.data.is_some());

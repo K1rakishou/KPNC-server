@@ -21,14 +21,14 @@ pub async fn ctor() {
         let connection = database.connection().await.unwrap();
 
         let query = r#"
-            DROP TABLE IF EXISTS public.migrations;
-            DROP TABLE IF EXISTS public.post_watches;
-            DROP TABLE IF EXISTS public.posts;
-            DROP TABLE IF EXISTS public.post_replies;
-            DROP TABLE IF EXISTS public.accounts;
-            DROP TABLE IF EXISTS public.post_descriptors;
-            DROP TABLE IF EXISTS public.threads;
-            DROP TABLE IF EXISTS public.logs;
+            DROP TABLE IF EXISTS public.account_tokens CASCADE;
+            DROP TABLE IF EXISTS public.accounts CASCADE;
+            DROP TABLE IF EXISTS public.logs CASCADE;
+            DROP TABLE IF EXISTS public.migrations CASCADE;
+            DROP TABLE IF EXISTS public.post_descriptors CASCADE;
+            DROP TABLE IF EXISTS public.post_replies CASCADE;
+            DROP TABLE IF EXISTS public.post_watches CASCADE;
+            DROP TABLE IF EXISTS public.threads CASCADE;
         "#;
 
         connection.batch_execute(query).await.unwrap();
@@ -40,22 +40,22 @@ pub async fn cleanup() {
     let connection = database.connection().await.unwrap();
 
     let query = r#"
-        DELETE FROM public.migrations;
-        DELETE FROM public.post_watches;
-        DELETE FROM public.posts;
-        DELETE FROM public.post_replies;
+        DELETE FROM public.account_tokens;
         DELETE FROM public.accounts;
-        DELETE FROM public.post_descriptors;
-        DELETE FROM public.threads;
         DELETE FROM public.logs;
+        DELETE FROM public.migrations;
+        DELETE FROM public.post_descriptors;
+        DELETE FROM public.post_replies;
+        DELETE FROM public.post_watches;
+        DELETE FROM public.threads;
 
+        ALTER SEQUENCE account_tokens_id_seq RESTART;
         ALTER SEQUENCE accounts_id_seq RESTART;
+        ALTER SEQUENCE logs_id_seq RESTART;
         ALTER SEQUENCE post_descriptors_id_seq RESTART;
         ALTER SEQUENCE post_replies_id_seq RESTART;
         ALTER SEQUENCE post_watches_id_seq RESTART;
-        ALTER SEQUENCE posts_id_seq RESTART;
         ALTER SEQUENCE threads_id_seq RESTART;
-        ALTER SEQUENCE logs_id_seq RESTART;
     "#;
 
     connection.batch_execute(query).await.unwrap();
@@ -66,13 +66,14 @@ pub async fn dtor() {
     let connection = database.connection().await.unwrap();
 
     let query = r#"
-        DROP TABLE IF EXISTS public.migrations;
-        DROP TABLE IF EXISTS public.post_watches;
-        DROP TABLE IF EXISTS public.posts;
-        DROP TABLE IF EXISTS public.post_replies;
-        DROP TABLE IF EXISTS public.accounts;
-        DROP TABLE IF EXISTS public.post_descriptors;
-        DROP TABLE IF EXISTS public.threads;
+        DROP TABLE IF EXISTS public.account_tokens CASCADE;
+        DROP TABLE IF EXISTS public.accounts CASCADE;
+        DROP TABLE IF EXISTS public.logs CASCADE;
+        DROP TABLE IF EXISTS public.migrations CASCADE;
+        DROP TABLE IF EXISTS public.post_descriptors CASCADE;
+        DROP TABLE IF EXISTS public.post_replies CASCADE;
+        DROP TABLE IF EXISTS public.post_watches CASCADE;
+        DROP TABLE IF EXISTS public.threads CASCADE;
     "#;
 
     connection.batch_execute(query).await.unwrap();

@@ -191,6 +191,12 @@ impl Account {
         return None;
     }
 
+    pub fn add_or_update_tokens(&mut self, tokens: &Vec<AccountToken>) {
+        for token in tokens {
+            self.add_or_update_token(token.clone());
+        }
+    }
+
     pub fn add_or_update_token(&mut self, new_token: AccountToken) {
         for (index, old_token) in self.tokens.iter().enumerate() {
             if old_token.token == new_token.token {
@@ -380,7 +386,7 @@ pub async fn create_account(
     let existing_account = get_account(account_id, database).await?;
     if existing_account.is_some() {
         warn!("create_account() account with id: {} already exists!", account_id.format_token());
-        return Err(anyhow!("Account {} already exists!", account_id));
+        return Err(anyhow!("Account already exists"));
     }
 
     let query = r#"
@@ -682,28 +688,15 @@ pub async fn test_get_account_from_database(
     account_id: &AccountId,
     database: &Arc<Database>
 ) -> anyhow::Result<Option<Account>> {
-    let query = r#"
-        SELECT
-            accounts.id,
-            accounts.account_id,
-            accounts.firebase_token,
-            accounts.valid_until
-        FROM accounts
-        WHERE
-            accounts.account_id = $1
-        AND
-            accounts.deleted_on IS NULL
-"#;
-
-    let connection = database.connection().await?;
-    let statement = connection.prepare(query).await?;
-
-    let row = connection.query_opt(&statement, &[&account_id.id]).await?;
-    if row.is_none() {
+    let account = get_account_from_database(account_id, database).await?;
+    if account.is_none() {
         return Ok(None);
     }
 
-    let account = Account::from_row(&row.unwrap()).unwrap();
+    let mut account = account.unwrap();
+    let account_tokens = get_account_tokens_from_database(account_id, database).await?;
+    account.add_or_update_tokens(&account_tokens);
+
     return Ok(Some(account));
 }
 

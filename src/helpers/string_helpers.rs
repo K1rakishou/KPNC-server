@@ -110,7 +110,7 @@ fn test_format_token_internal() {
     assert_eq!("123456...ABCDEF", token.format_token());
 
     let token = "61b976821ad4a7545054a2e45367e3af53522477d39b28fdca26b36fed95f8b1a2005e3188b682a74f9e772aa3cb7201fcb6d01ce6cb2cdf720690fd26d5bb1e";
-    assert_eq!("61b976...d5bb1e", token.format_token());
+    assert_eq!("61b976821a...fd26d5bb1e", token.format_token());
 }
 
 #[test]

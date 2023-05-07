@@ -4,6 +4,7 @@ mod tests {
     use crate::model::repository::account_repository::{AccountId, ApplicationType};
     use crate::test_case;
     use crate::tests::shared::{account_repository_shared, database_shared, watch_post_repository_shared};
+    use crate::tests::shared::server_shared::TEST_MASTER_PASSWORD;
     use crate::tests::shared::shared::{run_test, TestCase};
 
     #[tokio::test]
@@ -41,7 +42,11 @@ mod tests {
         let application_type = ApplicationType::KurobaExLiteDebug;
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
-        account_repository_shared::create_expired_account::<EmptyResponse>(user_id1, 1).await.unwrap();
+        account_repository_shared::create_expired_account::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
+            user_id1,
+            1
+        ).await.unwrap();
 
         let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
             user_id1,
@@ -52,7 +57,7 @@ mod tests {
         assert!(server_response.data.is_none());
         assert!(server_response.error.is_some());
         assert_eq!(
-            "Account already expired",
+            "Account has no token",
             server_response.error.unwrap()
         );
     }
@@ -63,14 +68,14 @@ mod tests {
 
         let server_response = watch_post_repository_shared::watch_post::<EmptyResponse>(
             user_id1,
-            "https://2ch.hk/vg/thread/426895061#p426901491",
+            "https://imageboard.com/vg/thread/426895061#p426901491",
             &application_type
         ).await.unwrap();
 
         assert!(server_response.data.is_none());
         assert!(server_response.error.is_some());
         assert_eq!(
-            "Site for url 'https://2ch.hk/vg/thread/426895061#p426901491' is not supported",
+            "Site for url 'https://imageboard.com/vg/thread/426895061#p426901491' is not supported",
             server_response.error.unwrap()
         );
     }
@@ -140,8 +145,29 @@ mod tests {
         let account_id1 = AccountId::test_unsafe(user_id1).unwrap();
         let account_id2 = AccountId::test_unsafe(user_id2).unwrap();
 
-        account_repository_shared::create_account_actual(user_id1).await;
-        account_repository_shared::create_account_actual(user_id2).await;
+        account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
+            user_id1
+        ).await;
+
+        account_repository_shared::update_firebase_token::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
+            user_id1,
+            &account_repository_shared::TEST_GOOD_FIREBASE_TOKEN1,
+            &application_type
+        ).await.unwrap();
+
+        account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
+            user_id2
+        ).await;
+
+        account_repository_shared::update_firebase_token::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
+            user_id2,
+            &account_repository_shared::TEST_GOOD_FIREBASE_TOKEN2,
+            &application_type
+        ).await.unwrap();
 
         let database = database_shared::database();
 
@@ -204,8 +230,29 @@ mod tests {
         let account_id1 = AccountId::test_unsafe(user_id1).unwrap();
         let account_id2 = AccountId::test_unsafe(user_id2).unwrap();
 
-        account_repository_shared::create_account_actual(user_id1).await;
-        account_repository_shared::create_account_actual(user_id2).await;
+        account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
+            user_id1
+        ).await;
+
+        account_repository_shared::update_firebase_token::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
+            user_id1,
+            &account_repository_shared::TEST_GOOD_FIREBASE_TOKEN1,
+            &application_type
+        ).await.unwrap();
+
+        account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
+            user_id2
+        ).await;
+
+        account_repository_shared::update_firebase_token::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
+            user_id2,
+            &account_repository_shared::TEST_GOOD_FIREBASE_TOKEN2,
+            &application_type
+        ).await.unwrap();
 
         let database = database_shared::database();
 

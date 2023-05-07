@@ -14,6 +14,7 @@ use crate::model::repository::site_repository::SiteRepository;
 use crate::router::{router, TestContext};
 
 static SERVER_WORKING_FLAG: AtomicBool = AtomicBool::new(false);
+pub static TEST_MASTER_PASSWORD: &'static str = "test123";
 
 lazy_static! {
     static ref SERVER_HANDLE: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
@@ -26,7 +27,7 @@ pub async fn ctor(
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = TcpListener::bind(addr).await.unwrap();
     SERVER_WORKING_FLAG.store(true, Ordering::SeqCst);
-    let master_password = "test123".to_string();
+    let master_password = TEST_MASTER_PASSWORD.to_string();
 
     let database_cloned_for_router = database.clone();
     let site_repository_cloned = site_repository.clone();

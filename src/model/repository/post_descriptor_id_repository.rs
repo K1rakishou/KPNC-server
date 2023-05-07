@@ -568,10 +568,15 @@ async fn insert_post_descriptor_into_cache(post_descriptor: &PostDescriptor, id:
 }
 
 pub async fn test_cleanup() {
+    let mut dbid_to_td_cache = DBID_TO_TD_CACHE.write().await;
+    let mut dt_to_dbid_cache = TD_TO_DBID_CACHE.write().await;
+
     let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
     let mut dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.write().await;
     let mut pd_to_td_cache_locked = PD_TO_TD_CACHE.write().await;
 
+    dbid_to_td_cache.clear();
+    dt_to_dbid_cache.clear();
     pd_to_dbid_cache_locked.clear();
     dbid_to_pd_cache_locked.clear();
     pd_to_td_cache_locked.clear();

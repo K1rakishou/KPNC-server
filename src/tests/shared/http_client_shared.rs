@@ -9,12 +9,14 @@ lazy_static! {
 
 pub async fn post_request<'a, Response : DeserializeOwned>(
     endpoint: &str,
-    body: &String
+    body: &String,
+    master_password: &str,
 ) -> anyhow::Result<Response> {
     let full_url = format!("{}/{}", *BASE_URL, endpoint);
 
     let request = HTTP_CLIENT.post(full_url)
         .body(body.clone())
+        .header("X-Master-Password", master_password.to_string())
         .build()?;
 
     let response = HTTP_CLIENT.execute(request).await.unwrap();

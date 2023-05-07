@@ -8,6 +8,7 @@ use crate::model::data::chan::PostDescriptor;
 use crate::model::database::db::Database;
 use crate::model::repository::account_repository::{AccountId, ApplicationType};
 use crate::tests::shared::http_client_shared;
+use crate::tests::shared::server_shared::TEST_MASTER_PASSWORD;
 
 pub struct TestPostWatch {
     pub account_id: AccountId,
@@ -29,7 +30,8 @@ pub async fn watch_post<'a, T : DeserializeOwned + ServerSuccessResponse>(
 
     let response = http_client_shared::post_request::<ServerResponse<T>>(
         "watch_post",
-        &body
+        &body,
+        TEST_MASTER_PASSWORD,
     ).await?;
 
     return Ok(response);
@@ -41,15 +43,15 @@ pub async fn get_post_watches_from_database(
 ) -> anyhow::Result<Vec<TestPostWatch>> {
     let query = r#"
         SELECT
-            pd.site_name,
-            pd.board_code,
-            pd.thread_no,
+            thread.site_name,
+            thread.board_code,
+            thread.thread_no,
             pd.post_no,
             pd.post_sub_no
         FROM post_watches
-        INNER JOIN accounts account on account.id = post_watches.owner_account_id
-        INNER JOIN posts post on post.id = post_watches.owner_post_id
-        INNER JOIN post_descriptors pd on pd.id = post.owner_post_descriptor_id
+            INNER JOIN accounts account on account.id = post_watches.owner_account_id
+            INNER JOIN post_descriptors pd on pd.id = post_watches.owner_post_descriptor_id
+            INNER JOIN threads thread on thread.id = pd.owner_thread_id
         WHERE account.account_id = $1
     "#;
 

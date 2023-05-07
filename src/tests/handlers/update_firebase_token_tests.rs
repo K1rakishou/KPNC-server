@@ -4,6 +4,7 @@ mod tests {
     use crate::model::repository::account_repository::{AccountId, ApplicationType};
     use crate::test_case;
     use crate::tests::shared::{account_repository_shared, database_shared};
+    use crate::tests::shared::server_shared::TEST_MASTER_PASSWORD;
     use crate::tests::shared::shared::{run_test, TestCase};
 
     #[tokio::test]
@@ -23,6 +24,7 @@ mod tests {
         let application_type = ApplicationType::KurobaExLiteDebug;
 
         let server_response = account_repository_shared::update_firebase_token::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id1,
             "test123",
             &application_type
@@ -38,10 +40,12 @@ mod tests {
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
             user_id1
         ).await;
 
         let server_response = account_repository_shared::update_firebase_token::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id1,
             &account_repository_shared::TEST_VERY_SHORT_FIREBASE_TOKEN,
             &application_type
@@ -57,10 +61,12 @@ mod tests {
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
             user_id1
         ).await;
 
         let server_response = account_repository_shared::update_firebase_token::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id1,
             &account_repository_shared::TEST_VERY_LONG_FIREBASE_TOKEN,
             &application_type
@@ -80,15 +86,18 @@ mod tests {
         let database = database_shared::database();
 
         account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
             user_id1
         ).await;
 
         account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
             user_id2
         ).await;
 
         {
             let server_response = account_repository_shared::update_firebase_token::<EmptyResponse>(
+                TEST_MASTER_PASSWORD,
                 user_id1,
                 "good token 1",
                 &application_type
@@ -120,6 +129,7 @@ mod tests {
 
         {
             let server_response = account_repository_shared::update_firebase_token::<EmptyResponse>(
+                TEST_MASTER_PASSWORD,
                 user_id2,
                 "good token 2",
                 &application_type

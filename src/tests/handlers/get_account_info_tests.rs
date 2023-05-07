@@ -5,6 +5,7 @@ mod tests {
     use crate::model::repository::account_repository::{AccountId, ApplicationType};
     use crate::test_case;
     use crate::tests::shared::{account_repository_shared, database_shared};
+    use crate::tests::shared::server_shared::TEST_MASTER_PASSWORD;
     use crate::tests::shared::shared::{run_test, TestCase};
 
     #[tokio::test]
@@ -22,6 +23,7 @@ mod tests {
         let user_id1 = &account_repository_shared::TEST_GOOD_USER_ID1;
 
         let server_response = account_repository_shared::get_account_info::<EmptyResponse>(
+            TEST_MASTER_PASSWORD,
             user_id1,
             &application_type
         ).await.unwrap();
@@ -40,15 +42,26 @@ mod tests {
         let database = database_shared::database();
 
         account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
             user_id1
         ).await;
 
+        account_repository_shared::update_token_actual(
+            TEST_MASTER_PASSWORD,
+            user_id1,
+            &account_repository_shared::TEST_GOOD_FIREBASE_TOKEN1,
+            &application_type
+        ).await;
+
+        // This doesn't have a token so it should return is_valid: false
         account_repository_shared::create_account_actual(
+            TEST_MASTER_PASSWORD,
             user_id2
         ).await;
 
         {
             let server_response = account_repository_shared::get_account_info::<AccountInfoResponse>(
+                TEST_MASTER_PASSWORD,
                 user_id1,
                 &application_type
             ).await.unwrap();
@@ -67,7 +80,7 @@ mod tests {
 
             assert_eq!(1, from_cache.id);
             assert_eq!(account_id1.id, from_cache.account_id.id);
-            assert!(&from_cache.account_token(&application_type).is_none());
+            assert!(&from_cache.account_token(&application_type).is_some());
             assert!(&from_cache.valid_until.is_some());
 
             let from_database = account_repository_shared::get_account_from_database(user_id1, database)
@@ -83,6 +96,7 @@ mod tests {
 
         {
             let server_response = account_repository_shared::get_account_info::<AccountInfoResponse>(
+                TEST_MASTER_PASSWORD,
                 user_id2,
                 &application_type
             ).await.unwrap();
@@ -91,7 +105,7 @@ mod tests {
             assert!(server_response.error.is_none());
 
             let account_info_response = server_response.data.unwrap();
-            assert_eq!(true, account_info_response.is_valid);
+            assert_eq!(false, account_info_response.is_valid);
             assert_eq!(false, account_info_response.valid_until.is_none());
 
             let from_cache = account_repository_shared::get_account_from_cache(user_id2)
