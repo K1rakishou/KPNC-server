@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Context;
 use fcm::Priority;
@@ -52,7 +53,7 @@ impl FcmSender {
         };
     }
 
-    pub async fn send_fcm_messages(&self, chunk_size: usize) -> anyhow::Result<()> {
+    pub async fn send_fcm_messages(&self, chunk_size: usize) -> anyhow::Result<u64> {
         let unsent_replies = post_reply_repository::get_unsent_replies(
             self.is_dev_build,
             &self.database
@@ -60,7 +61,7 @@ impl FcmSender {
 
         if unsent_replies.is_empty() {
             info!("send_fcm_messages() No unsent replies found");
-            return Ok(());
+            return Ok(0);
         }
 
         for (firebase_token, unsent_replies_for_token) in &unsent_replies {
@@ -79,6 +80,7 @@ impl FcmSender {
             Arc::new(RwLock::new(HashSet::<i64>::with_capacity(capacity)));
         let mut join_handles: Vec<JoinHandle<()>> = Vec::with_capacity(chunk_size);
         let semaphore = Arc::new(tokio::sync::Semaphore::new(chunk_size));
+        let sent_replies = Arc::new(AtomicU64::new(0));
 
         for (account_token, unsent_replies) in unsent_replies {
             if unsent_replies.is_empty() {
@@ -91,6 +93,7 @@ impl FcmSender {
             let firebase_api_key_cloned = firebase_api_key.clone();
             let account_token_cloned = account_token.clone();
             let site_repository_cloned = self.site_repository.clone();
+            let sent_replies_cloned = sent_replies.clone();
 
             let join_handle = tokio::task::spawn(async move {
                 let result = send_unsent_reply(
@@ -103,6 +106,7 @@ impl FcmSender {
                     &site_repository_cloned
                 ).await;
 
+                sent_replies_cloned.fetch_add(1, Ordering::Relaxed);
                 drop(semaphore_permit);
                 result.unwrap();
             });
@@ -146,7 +150,7 @@ impl FcmSender {
             );
         }
 
-        return Ok(());
+        return Ok(sent_replies.load(Ordering::Relaxed));
     }
 }
 
@@ -202,7 +206,7 @@ async fn send_unsent_reply(
             unsent_replies
                 .iter()
                 .for_each(|unsent_reply| {
-                    failed_to_send_locked.insert(unsent_reply.post_reply_id_generated);
+                    failed_to_send_locked.insert(unsent_reply.post_reply_id);
                 });
         }
 
@@ -218,7 +222,7 @@ async fn send_unsent_reply(
             unsent_replies
                 .iter()
                 .for_each(|unsent_reply| {
-                    successfully_sent_locked.insert(unsent_reply.post_reply_id_generated);
+                    successfully_sent_locked.insert(unsent_reply.post_reply_id);
                 });
         }
 
@@ -232,8 +236,11 @@ async fn send_unsent_reply(
     return Ok(());
 }
 
-fn convert_unsent_replies_to_fcm_messages(unsent_replies: &HashSet<UnsentReply>, site_repository: &Arc<SiteRepository>) -> Vec<FcmReplyMessage> {
-    unsent_replies
+fn convert_unsent_replies_to_fcm_messages(
+    unsent_replies: &HashSet<UnsentReply>,
+    site_repository: &Arc<SiteRepository>
+) -> Vec<FcmReplyMessage> {
+    return unsent_replies
         .into_iter()
         .filter_map(|unsent_reply| {
             let post_url = site_repository.to_url(&unsent_reply.post_descriptor);
@@ -244,11 +251,11 @@ fn convert_unsent_replies_to_fcm_messages(unsent_replies: &HashSet<UnsentReply>,
             let post_url = post_url.unwrap();
 
             let fcm_reply_message = FcmReplyMessage {
-                reply_id: unsent_reply.post_reply_id_generated as u64,
+                reply_id: unsent_reply.post_reply_id as u64,
                 new_reply_url: post_url
             };
 
             return Some(fcm_reply_message);
         })
-        .collect()
+        .collect();
 }

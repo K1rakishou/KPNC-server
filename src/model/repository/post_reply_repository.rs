@@ -13,6 +13,7 @@ use crate::service::thread_watcher::FoundPostReply;
 
 const MAX_NOTIFICATION_DELIVERY_ATTEMPTS: i16 = 25;
 
+#[derive(Debug)]
 pub struct PostReply {
     pub owner_post_descriptor_id: i64,
     pub owner_account_id: i64,
@@ -20,22 +21,22 @@ pub struct PostReply {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct UnsentReply {
-    pub post_reply_id_generated: i64,
+    pub post_reply_id: i64,
     pub token: AccountToken,
     pub post_descriptor: PostDescriptor
 }
 
 impl UnsentReply {
     pub fn from_row(row: &Row) -> anyhow::Result<UnsentReply> {
-        let post_reply_id_generated: i64 = row.try_get(0)?;
-        let token: String = row.try_get(1)?;
-        let application_type: i64 = row.try_get(1)?;
-        let token_type: i64 = row.try_get(1)?;
+        let post_reply_id: i64 = row.try_get(0)?;
         let site_name: String = row.try_get(2)?;
         let board_code: String = row.try_get(3)?;
         let thread_no: i64 = row.try_get(4)?;
         let post_no: i64 = row.try_get(5)?;
         let post_sub_no: i64 = row.try_get(6)?;
+        let token: String = row.try_get(7)?;
+        let application_type: i64 = row.try_get(8)?;
+        let token_type: i64 = row.try_get(9)?;
 
         let post_descriptor = PostDescriptor::new(
             site_name,
@@ -55,7 +56,7 @@ impl UnsentReply {
         };
 
         let unsent_reply = UnsentReply {
-            post_reply_id_generated,
+            post_reply_id,
             token: account_token,
             post_descriptor
         };
@@ -79,10 +80,15 @@ pub async fn store(
         INSERT INTO post_replies
         (
             owner_account_id,
-            owner_post_descriptor_id
+            owner_post_descriptor_id,
+            reply_to_post_descriptor_id
         )
-        VALUES ($1, $2)
-        ON CONFLICT (owner_account_id, owner_post_descriptor_id) DO NOTHING
+        VALUES ($1, $2, $3)
+        ON CONFLICT (
+            owner_account_id,
+            owner_post_descriptor_id,
+            reply_to_post_descriptor_id
+        ) DO NOTHING
     "#;
 
     let mut connection = database.connection().await?;
@@ -97,25 +103,27 @@ pub async fn store(
             continue;
         }
 
-        let post_descriptors_to_insert = post_descriptors_to_insert.unwrap();
+        let found_post_replies = post_descriptors_to_insert.unwrap();
 
-        let post_descriptors_to_insert = post_descriptors_to_insert
-            .iter()
-            .map(|found_post_reply| &found_post_reply.origin)
-            .collect::<Vec<&PostDescriptor>>();
+        let origin_post_db_ids = post_descriptor_id_repository::insert_descriptor_db_ids(
+            &found_post_replies.iter().map(|fpr| &fpr.origin).collect::<Vec<&PostDescriptor>>(),
+            &transaction
+        ).await?;
 
-        let pd_to_db_id_map = post_descriptor_id_repository::insert_descriptor_db_ids(
-            &post_descriptors_to_insert,
+        let reply_to_post_db_ids = post_descriptor_id_repository::insert_descriptor_db_ids(
+            &found_post_replies.iter().map(|fpr| &fpr.replies_to).collect::<Vec<&PostDescriptor>>(),
             &transaction
         ).await?;
 
         let statement = transaction.prepare(query).await?;
 
-        // TODO: whoa this is probably VERY slow!
-        for (_, post_descriptor_db_id) in pd_to_db_id_map {
+        for found_post_reply in found_post_replies {
+            let origin_post_db_id = origin_post_db_ids.get(&found_post_reply.origin);
+            let reply_to_post_db_id = reply_to_post_db_ids.get(&found_post_reply.replies_to);
+
             transaction.execute(
                 &statement,
-                &[&post_reply.owner_account_id, &post_descriptor_db_id]
+                &[&post_reply.owner_account_id, &origin_post_db_id, &reply_to_post_db_id]
             ).await?;
         }
     }
@@ -129,49 +137,83 @@ pub async fn get_unsent_replies(
     is_dev_build: bool,
     database: &Arc<Database>
 ) -> anyhow::Result<HashMap<AccountToken, HashSet<UnsentReply>>> {
+    // Damn, this motherfucker is kinda too complex but I have no idea how to simplify it.
+    // The idea here is to extract post_replies.id, account_token.token, thread.site_name,
+    // thread.board_code, thread.thread_no, post_descriptor.post_no, post_descriptor.post_sub_no
+    // but only for post_replies that match post_watches' account_token.application_type.
+    // In other words, accounts can have multiple tokens with different application types
+    // (for example for KurobaExLite there are two application types: Debug and Production, since
+    // the user can have both applications installed on their phone). When we start watching a post
+    // we send what application was it the created this post watch. So when a reply to this watch
+    // comes we only send the reply to the token that is associated with the original post watch.
     let query = r#"
+        WITH
+            -- Associate post_reply with account_token.application_type
+            post_reply_application_type AS (
+                SELECT
+                    post_replies.id,
+                    post_replies.owner_account_id,
+                    account_token.application_type
+                FROM post_replies
+                         INNER JOIN accounts account
+                                    ON account.id = post_replies.owner_account_id
+                         INNER JOIN account_tokens account_token
+                                    ON account.id = account_token.owner_account_id
+            ),
+            -- Associate post_replies with post_watch.application_type
+            post_watch_application_type AS (
+                SELECT
+                    post_watch.id,
+                    post_watch.owner_account_id,
+                    post_watch.application_type
+                FROM post_replies
+                         INNER JOIN post_descriptors post_descriptor
+                                    ON post_replies.reply_to_post_descriptor_id = post_descriptor.id
+                         INNER JOIN post_watches post_watch
+                                    ON post_descriptor.id = post_watch.owner_post_descriptor_id
+            )
+
         SELECT
-            unsent_post_reply.id_generated,
-            unsent_post_reply.token,
-            unsent_post_reply.site_name,
-            unsent_post_reply.board_code,
-            unsent_post_reply.thread_no,
-            unsent_post_reply.post_no,
-            unsent_post_reply.post_sub_no
-        FROM
-        (
-            SELECT
-                post_replies.id_generated,
-                account_token.token,
-                post_descriptor.site_name,
-                post_descriptor.board_code,
-                post_descriptor.thread_no,
-                post_descriptor.post_no,
-                post_descriptor.post_sub_no
-            FROM post_replies
-                LEFT JOIN accounts account
-                    ON account.id_generated = post_replies.owner_account_id
-                LEFT JOIN account_tokens account_token
-                    ON account_token.owner_account_id = account.id_generated
-                LEFT JOIN post_descriptors post_descriptor
-                    ON post_replies.owner_post_descriptor_id = post_descriptor.id_generated
-                LEFT JOIN posts post
-                    ON post_descriptor.id_generated = post.owner_post_descriptor_id
-                LEFT JOIN post_watches post_watch
-                    ON post.id_generated = post_watch.owner_post_id
-            WHERE
-                post_replies.deleted_on IS NULL
-            AND
-                post_replies.notification_delivery_attempt < $1
-            AND
-                post_replies.notification_delivered_on IS NULL
-            AND
-                post_watch.application_type = account_token.application_type
-            AND
-                account.valid_until > now()
-            AND
-                account.deleted_on IS NULL
-        ) AS unsent_post_reply
+            post_replies.id,
+            account_token.token,
+            thread.site_name,
+            thread.board_code,
+            thread.thread_no,
+            post_descriptor.post_no,
+            post_descriptor.post_sub_no,
+            account_token.token,
+            account_token.application_type,
+            account_token.token_type
+        FROM post_replies
+            INNER JOIN accounts account
+                ON post_replies.owner_account_id = account.id
+            INNER JOIN account_tokens account_token
+                ON account_token.owner_account_id = account.id
+            INNER JOIN post_descriptors post_descriptor
+                ON post_replies.owner_post_descriptor_id = post_descriptor.id
+            INNER JOIN threads thread
+                ON post_descriptor.owner_thread_id = thread.id
+            INNER JOIN post_watches post_watch
+                ON post_watch.owner_post_descriptor_id = post_replies.reply_to_post_descriptor_id
+            INNER JOIN post_reply_application_type prat
+                ON post_replies.id = prat.id
+            INNER JOIN post_watch_application_type pwat
+                ON post_watch.id = pwat.id
+        WHERE
+            prat.owner_account_id = pwat.owner_account_id
+        AND
+            -- Select only post replies that have the same application_type as post watches they reply to
+            prat.application_type = pwat.application_type
+        AND
+            post_replies.deleted_on IS NULL
+        AND
+            post_replies.notification_delivery_attempt < $1
+        AND
+            post_replies.notification_delivered_on IS NULL
+        AND
+            account.valid_until > now()
+        AND
+            account.deleted_on IS NULL
     "#;
 
     let connection = database.connection().await?;
@@ -227,7 +269,7 @@ pub async fn increment_notification_delivery_attempt(
     let query = r#"
         UPDATE post_replies
         SET notification_delivery_attempt = notification_delivery_attempt + 1
-        WHERE id_generated IN ({QUERY_PARAMS})
+        WHERE id IN ({QUERY_PARAMS})
     "#;
 
     let (query, db_params) = db_helpers::format_query_params(
@@ -252,7 +294,7 @@ pub async fn mark_post_replies_as_notified(
     let query = r#"
         UPDATE post_replies
         SET notification_delivered_on = now()
-        WHERE id_generated IN ({QUERY_PARAMS})
+        WHERE id IN ({QUERY_PARAMS})
     "#;
 
     let (query, db_params) = db_helpers::format_query_params(

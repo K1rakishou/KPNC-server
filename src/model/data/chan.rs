@@ -44,14 +44,13 @@ pub struct PostDescriptor {
 pub struct ChanPost {
     pub post_no: u64,
     pub post_sub_no: Option<u64>,
-    pub is_op: bool,
-    pub closed: bool,
-    pub archived: bool,
     pub comment_unparsed: Option<String>
 }
 
 #[derive(Debug)]
 pub struct ChanThread {
+    pub closed: bool,
+    pub archived: bool,
     pub posts: Vec<ChanPost>
 }
 
@@ -259,20 +258,8 @@ impl PostDescriptor {
     }
 }
 
-impl ChanPost {
+impl ChanThread {
     pub fn is_not_active(&self) -> bool {
         return self.closed || self.archived;
-    }
-}
-
-impl ChanThread {
-    pub fn get_original_post(&self) -> Option<&ChanPost> {
-        for post in &self.posts {
-            if post.is_op {
-                return Some(&post);
-            }
-        }
-
-        return None;
     }
 }

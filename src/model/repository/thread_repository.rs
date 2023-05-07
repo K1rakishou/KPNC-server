@@ -93,7 +93,7 @@ pub async fn get_last_modified(
         WHERE threads.site_name = $1
           AND threads.board_code = $2
           AND threads.thread_no = $3
-"#;
+    "#;
 
     let connection = database.connection().await?;
     let statement = connection.prepare(query).await?;
@@ -112,9 +112,9 @@ pub async fn get_last_modified(
     }
 
     let row = row_maybe.unwrap();
-    let last_modified: DateTime<FixedOffset> = row.try_get(0)?;
+    let last_modified: Option<DateTime<FixedOffset>> = row.try_get(0)?;
 
-    return Ok(Some(last_modified));
+    return Ok(last_modified);
 }
 
 pub async fn store_last_modified(

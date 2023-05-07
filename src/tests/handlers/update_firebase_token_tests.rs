@@ -94,7 +94,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            assert_eq!(1, from_cache.id_generated);
+            assert_eq!(1, from_cache.id);
             assert_eq!(account_id1.id, from_cache.account_id.id);
             assert_eq!("good token 1", &from_cache.firebase_token().unwrap().token);
             assert!(&from_cache.valid_until.is_some());
@@ -104,7 +104,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            assert_eq!(1, from_database.id_generated);
+            assert_eq!(1, from_database.id);
             assert_eq!(account_id1.id, from_database.account_id.id);
             assert_eq!("good token 1", &from_database.firebase_token().unwrap().token);
             assert!(&from_database.valid_until.is_some());
@@ -125,7 +125,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            assert_eq!(2, from_cache.id_generated);
+            assert_eq!(2, from_cache.id);
             assert_eq!(account_id2.id, from_cache.account_id.id);
             assert_eq!("good token 2", &from_cache.firebase_token().unwrap().token);
             assert!(&from_cache.valid_until.is_some());
@@ -135,7 +135,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            assert_eq!(2, from_database.id_generated);
+            assert_eq!(2, from_database.id);
             assert_eq!(account_id2.id, from_database.account_id.id);
             assert_eq!("good token 2", &from_database.firebase_token().unwrap().token);
             assert!(&from_database.valid_until.is_some());

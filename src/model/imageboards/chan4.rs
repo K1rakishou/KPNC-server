@@ -167,22 +167,30 @@ impl Imageboard for Chan4 {
             return Ok(None);
         }
 
+        let original_post = chan4_thread.posts.first();
+        if original_post.is_none() {
+            return Ok(None);
+        }
+
+        let original_post = original_post.unwrap();
         let mut chan_posts = Vec::<ChanPost>::with_capacity(chan4_thread.posts.len());
 
         for chan4_post in &chan4_thread.posts {
             let chan_post = ChanPost {
                 post_no: chan4_post.no,
                 post_sub_no: None,
-                is_op: chan4_post.resto == 0,
-                closed: chan4_post.closed.unwrap_or(0) == 1,
-                archived: chan4_post.archived.unwrap_or(0) == 1,
                 comment_unparsed: chan4_post.com.clone()
             };
 
             chan_posts.push(chan_post);
         }
 
-        let chan_thread = ChanThread { posts: chan_posts };
+        let chan_thread = ChanThread {
+            posts: chan_posts,
+            closed: original_post.closed.unwrap_or(0) == 1,
+            archived: original_post.archived.unwrap_or(0) == 1,
+        };
+
         return Ok(Some(chan_thread));
     }
 }

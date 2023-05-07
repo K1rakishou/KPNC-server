@@ -272,7 +272,7 @@ mod tests {
             let query = r#"
                 SELECT account_id
                 FROM accounts
-                WHERE accounts.id_generated = $1
+                WHERE accounts.id = $1
             "#;
 
             let statement = connection.prepare(query).await?;
@@ -284,7 +284,7 @@ mod tests {
             let query = r#"
                 SELECT site_name, board_code, thread_no, post_no, post_sub_no
                 FROM post_descriptors
-                WHERE post_descriptors.id_generated = $1
+                WHERE post_descriptors.id = $1
             "#;
 
             let statement = connection.prepare(query).await?;

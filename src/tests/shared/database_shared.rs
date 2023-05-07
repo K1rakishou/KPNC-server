@@ -49,12 +49,12 @@ pub async fn cleanup() {
         DELETE FROM public.threads;
         DELETE FROM public.logs;
 
-        ALTER SEQUENCE accounts_id_generated_seq RESTART;
-        ALTER SEQUENCE post_descriptors_id_generated_seq RESTART;
-        ALTER SEQUENCE post_replies_id_generated_seq RESTART;
-        ALTER SEQUENCE post_watches_id_generated_seq RESTART;
-        ALTER SEQUENCE posts_id_generated_seq RESTART;
-        ALTER SEQUENCE threads_id_generated_seq RESTART;
+        ALTER SEQUENCE accounts_id_seq RESTART;
+        ALTER SEQUENCE post_descriptors_id_seq RESTART;
+        ALTER SEQUENCE post_replies_id_seq RESTART;
+        ALTER SEQUENCE post_watches_id_seq RESTART;
+        ALTER SEQUENCE posts_id_seq RESTART;
+        ALTER SEQUENCE threads_id_seq RESTART;
         ALTER SEQUENCE logs_id_seq RESTART;
     "#;
 

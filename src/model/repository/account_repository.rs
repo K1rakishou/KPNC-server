@@ -21,7 +21,7 @@ lazy_static! {
 
 #[derive(Clone)]
 pub struct Account {
-    pub id_generated: i64,
+    pub id: i64,
     pub account_id: AccountId,
     pub tokens: Vec<AccountToken>,
     pub valid_until: Option<DateTime<Utc>>
@@ -39,7 +39,7 @@ impl Display for AccountToken {
         write!(f, "AccountToken(")?;
         write!(f, "{}, ", self.token.format_token())?;
         write!(f, "{}, ", self.application_type)?;
-        write!(f, "{}, ", self.token_type)?;
+        write!(f, "{}", self.token_type)?;
         write!(f, ")")?;
         return Ok(());
     }
@@ -209,13 +209,13 @@ impl Account {
     }
 
     pub fn new(
-        id_generated: i64,
+        id: i64,
         account_id: AccountId,
         tokens: Vec<AccountToken>,
         valid_until: Option<DateTime<Utc>>
     ) -> Account {
         return Account {
-            id_generated,
+            id,
             account_id,
             tokens,
             valid_until
@@ -223,12 +223,12 @@ impl Account {
     }
 
     pub fn from_row(row: &Row) -> anyhow::Result<Account> {
-        let id_generated: i64 = row.try_get(0)?;
+        let id: i64 = row.try_get(0)?;
         let account_id: String = row.try_get(1)?;
         let valid_until: Option<DateTime<Utc>> = row.try_get(2)?;
 
         let account = Account {
-            id_generated,
+            id,
             account_id: AccountId::new(account_id),
             tokens: Vec::with_capacity(4),
             valid_until
@@ -390,13 +390,13 @@ pub async fn create_account(
             valid_until
         )
         VALUES ($1, $2)
-        RETURNING accounts.id_generated
-"#;
+        RETURNING accounts.id
+    "#;
 
     let connection = database.connection().await?;
     let statement = connection.prepare(query).await?;
 
-    let id_generated: i64 = connection.query_one(
+    let id: i64 = connection.query_one(
         &statement,
         &[&account_id.id, &valid_until]
     ).await?.try_get(0)?;
@@ -410,7 +410,7 @@ pub async fn create_account(
         }
 
         let new_account = Account::new(
-            id_generated,
+            id,
             account_id.clone(),
             Vec::with_capacity(4),
             valid_until.clone()
@@ -439,6 +439,8 @@ pub async fn update_firebase_token(
         return Ok(UpdateFirebaseTokenResult::AccountDoesNotExist);
     }
 
+    let account_id_generated = { existing_account.unwrap().lock().await.id };
+
     let query = r#"
         INSERT INTO account_tokens (
             owner_account_id,
@@ -456,7 +458,7 @@ pub async fn update_firebase_token(
     connection.execute(
         &statement,
         &[
-            &account_id.id,
+            &account_id_generated,
             &firebase_token.token,
             &(application_type.clone() as i64),
             &(TokenType::Firebase as i64)
@@ -554,13 +556,13 @@ pub async fn retain_post_db_ids_belonging_to_account(
 ) -> anyhow::Result<Vec<i64>> {
     let query = r#"
         SELECT
-            post_replies.id_generated
+            post_replies.id
         FROM post_replies
-        INNER JOIN accounts account on account.id_generated = post_replies.owner_account_id
+        INNER JOIN accounts account on account.id = post_replies.owner_account_id
         WHERE
             account.account_id = $1
         AND
-            post_replies.id_generated IN ({QUERY_PARAMS})
+            post_replies.id IN ({QUERY_PARAMS})
     "#;
 
     let connection = database.connection().await?;
@@ -597,7 +599,7 @@ async fn get_account_from_database(
 ) -> anyhow::Result<Option<Account>> {
     let query = r#"
         SELECT
-            accounts.id_generated,
+            accounts.id,
             accounts.account_id,
             accounts.valid_until
         FROM accounts
@@ -634,7 +636,7 @@ async fn get_account_tokens_from_database(
             token_type
         FROM accounts
         INNER JOIN
-            account_tokens account_token on accounts.id_generated = account_token.owner_account_id
+            account_tokens account_token on accounts.id = account_token.owner_account_id
         WHERE account_id = $1
     "#;
 
@@ -682,7 +684,7 @@ pub async fn test_get_account_from_database(
 ) -> anyhow::Result<Option<Account>> {
     let query = r#"
         SELECT
-            accounts.id_generated,
+            accounts.id,
             accounts.account_id,
             accounts.firebase_token,
             accounts.valid_until
@@ -736,9 +738,9 @@ pub async fn test_put_account_into_database(
 
 pub async fn test_count_accounts_in_database(database: &Arc<Database>) -> anyhow::Result<i64> {
     let query = r#"
-        SELECT COUNT(accounts.id_generated)
+        SELECT COUNT(accounts.id)
         FROM accounts
-"#;
+    "#;
 
     let connection = database.connection().await?;
     let statement = connection.prepare(query).await?;

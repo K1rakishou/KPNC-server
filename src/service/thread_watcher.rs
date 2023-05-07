@@ -119,7 +119,8 @@ async fn process_watched_threads(
     fcm_sender: &Arc<FcmSender>,
 ) -> anyhow::Result<usize> {
     let all_watched_threads = post_repository::get_all_watched_threads(database)
-        .await.context("process_watched_threads() Failed to get all watched threads")?;
+        .await
+        .context("process_watched_threads() Failed to get all watched threads")?;
 
     if all_watched_threads.is_empty() {
         info!("process_watched_threads() no watched threads to process");
@@ -171,13 +172,15 @@ async fn process_watched_threads(
         delta.num_milliseconds()
     );
 
-    fcm_sender.send_fcm_messages(chunk_size)
+    let sent_fcm_messages = fcm_sender.send_fcm_messages(chunk_size)
         .await
         .context("Error while trying to send out FCM messages")?;
 
     let delta = chrono::offset::Utc::now() - send_fcm_messages_start;
     info!(
-        "process_watched_threads() sending out FCM messages done, took {} ms, success!",
+        "process_watched_threads() sending out FCM messages done ({} messages sent), \
+        took {} ms, success!",
+        sent_fcm_messages,
         delta.num_milliseconds()
     );
 
@@ -332,29 +335,20 @@ async fn process_thread(
     }
 
     let chan_thread = chan_thread.unwrap();
-
-    let original_post = chan_thread.get_original_post();
-    if original_post.is_none() {
-        let posts_count = chan_thread.posts.len();
-        error!(
-            "process_thread({}) thread has no original post, posts_count: {}",
-            thread_descriptor,
-            posts_count
-        );
-
-        return Ok(());
-    }
-
-    let original_post = original_post.unwrap();
-    if original_post.is_not_active() {
+    if chan_thread.is_not_active() {
         info!(
             "process_thread({}) marking thread as dead it's either archived or closed \
             (archived: {}, closed: {})",
             thread_descriptor,
-            original_post.archived,
-            original_post.closed,
+            chan_thread.archived,
+            chan_thread.closed,
         );
 
+        // TODO: this is probably not entirely correct. Right now this function will also
+        //  delete post/thread descriptors from the caches as well. We probably don't want to do
+        //  that here since we also need to send unsent FCM messages and that won't work with no
+        //  post/thread descriptors in the caches. Instead, we should only mark threads as dead in
+        //  the database and actually deleted them after we sent all unsent FCM messages.
         post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
 
         // Fall through. We still want to send the last batch of messages if there are new replies

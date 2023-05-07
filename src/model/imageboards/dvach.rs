@@ -176,22 +176,31 @@ impl Imageboard for Dvach {
         }
 
         let dvach_thread = dvach_thread.unwrap();
+
+        let original_post = dvach_thread.posts.first();
+        if original_post.is_none() {
+            return Ok(None);
+        }
+
+        let original_post = original_post.unwrap();
         let mut chan_posts = Vec::<ChanPost>::with_capacity(dvach_thread.posts.len());
 
-        for (index, chan4_post) in dvach_thread.posts.iter().enumerate() {
+        for chan4_post in &dvach_thread.posts {
             let chan_post = ChanPost {
                 post_no: chan4_post.num,
                 post_sub_no: None,
-                is_op: index == 0,
-                closed: chan4_post.closed.unwrap_or(0) == 1,
-                archived: false,
                 comment_unparsed: chan4_post.comment.clone()
             };
 
             chan_posts.push(chan_post);
         }
 
-        let chan_thread = ChanThread { posts: chan_posts };
+        let chan_thread = ChanThread {
+            posts: chan_posts,
+            closed: original_post.closed.unwrap_or(0) == 1,
+            archived: false,
+        };
+
         return Ok(Some(chan_thread));
     }
 }

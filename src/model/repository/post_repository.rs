@@ -60,48 +60,29 @@ pub async fn start_watching_post(
     let mut connection = database.connection().await?;
     let transaction = connection.transaction().await?;
 
-    let owner_post_descriptor_id = post_descriptor_id_repository::insert_descriptor_db_id(
+    let owner_post_descriptor_id = post_descriptor_id_repository::insert_post_descriptor_db_id(
         post_descriptor,
         &transaction
     ).await?;
 
     let query = r#"
-        INSERT INTO posts(
-            owner_post_descriptor_id,
-            is_dead
-        )
-        VALUES ($1, $2)
-        ON CONFLICT (owner_post_descriptor_id)
-        DO UPDATE SET owner_post_descriptor_id = $1
-        RETURNING posts.id_generated
-    "#;
-
-    let owner_post_id: i64 = transaction.query_one(
-        query,
-        &[
-            &owner_post_descriptor_id,
-            &false
-        ]
-    ).await?.get(0);
-
-    let query = r#"
         INSERT INTO post_watches(
-            owner_post_id,
             owner_account_id,
+            owner_post_descriptor_id,
             application_type
         )
         VALUES ($1, $2, $3)
-        ON CONFLICT (owner_post_id, owner_account_id) DO NOTHING
-        RETURNING id_generated
+        ON CONFLICT (owner_account_id, owner_post_descriptor_id) DO NOTHING
+        RETURNING id
     "#;
 
-    let account_id_generated = { account.lock().await.id_generated };
+    let account_id = { account.lock().await.id };
 
     let new_watch_inserted = transaction.query_opt(
         query,
         &[
-            &owner_post_id,
-            &account_id_generated,
+            &account_id,
+            &owner_post_descriptor_id,
             &(application_type.clone() as i64)
         ]
     ).await?.is_some();
@@ -177,15 +158,18 @@ pub async fn stop_watching_post(
 
     let query = r#"
         DELETE FROM post_watches
-        WHERE id_generated IN (
+        WHERE id IN (
             SELECT
-                post_watch.id_generated
+                post_watch.id
             FROM post_descriptors
-                 INNER JOIN posts post on post_descriptors.id_generated = post.owner_post_descriptor_id
-                 INNER JOIN post_watches post_watch on post.id_generated = post_watch.owner_post_id
-                 INNER JOIN accounts a on a.id_generated = post_watch.owner_account_id
+                INNER JOIN threads thread
+                    ON thread.id = post_descriptors.owner_thread_id
+                INNER JOIN post_watches post_watch
+                    ON post_descriptors.id = post_watch.owner_post_descriptor_id
+                INNER JOIN accounts a
+                    ON a.id = post_watch.owner_account_id
             WHERE
-                post_descriptors.id_generated = $1
+                post_descriptors.id = $1
             AND
                 a.account_id = $2
         )
@@ -223,14 +207,16 @@ pub async fn get_all_watched_threads(
 
     let query = r#"
         SELECT
-            posts.owner_post_descriptor_id
+            post_descriptor.id
         FROM
-            posts
+            threads AS thread
+        INNER JOIN post_descriptors post_descriptor
+            ON thread.id = post_descriptor.owner_thread_id
         WHERE
-            posts.is_dead IS NOT TRUE
+            thread.is_dead IS NOT TRUE
         AND
-            posts.deleted_on is NULL
-"#;
+            thread.deleted_on is NULL
+    "#;
 
     let rows = connection.query(query, &[]).await?;
     if rows.is_empty() {
@@ -242,7 +228,7 @@ pub async fn get_all_watched_threads(
         .collect::<Vec<i64>>();
 
     let post_descriptors = post_descriptor_id_repository::get_many_post_descriptors_by_db_ids(
-        owner_post_descriptor_ids
+        &owner_post_descriptor_ids
     ).await;
 
     if post_descriptors.is_empty() {
@@ -298,19 +284,19 @@ pub async fn find_new_replies(
 ) -> anyhow::Result<Vec<PostReply>> {
     let query = r#"
         SELECT
-            posts.owner_post_descriptor_id,
-            account.id_generated
-        FROM posts
-            LEFT JOIN post_watches watch on posts.id_generated = watch.owner_post_id
-            LEFT JOIN accounts account on watch.owner_account_id = account.id_generated
-            LEFT JOIN post_descriptors pd on pd.id_generated = posts.owner_post_descriptor_id
-            LEFT JOIN post_replies post_reply on pd.id_generated = post_reply.owner_post_descriptor_id
+            post_descriptor.id,
+            account.id
+        FROM threads
+            LEFT JOIN post_descriptors post_descriptor on post_descriptor.owner_thread_id = threads.id
+            LEFT JOIN post_watches watch on watch.owner_post_descriptor_id = post_descriptor.id
+            LEFT JOIN accounts account on watch.owner_account_id = account.id
+            LEFT JOIN post_replies post_reply on post_descriptor.id = post_reply.owner_post_descriptor_id
         WHERE
-            posts.owner_post_descriptor_id IN ({QUERY_PARAMS})
+            post_descriptor.id IN ({QUERY_PARAMS})
         AND
             post_reply.deleted_on IS NULL
         AND
-            account.id_generated IS NOT NULL
+            account.id IS NOT NULL
     "#;
 
     let (query, query_params) = db_helpers::format_query_params(
@@ -332,11 +318,11 @@ pub async fn find_new_replies(
 
     for row in rows {
         let post_descriptor_id: i64 = row.get(0);
-        let account_id_generated: i64 = row.get(1);
+        let account_id: i64 = row.get(1);
 
         let post_reply = PostReply {
             owner_post_descriptor_id: post_descriptor_id,
-            owner_account_id: account_id_generated
+            owner_account_id: account_id
         };
 
         post_replies.push(post_reply);

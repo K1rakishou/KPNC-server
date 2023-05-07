@@ -45,9 +45,9 @@ pub async fn get_post_watches_from_database(
             pd.post_no,
             pd.post_sub_no
         FROM post_watches
-        INNER JOIN accounts account on account.id_generated = post_watches.owner_account_id
-        INNER JOIN posts post on post.id_generated = post_watches.owner_post_id
-        INNER JOIN post_descriptors pd on pd.id_generated = post.owner_post_descriptor_id
+        INNER JOIN accounts account on account.id = post_watches.owner_account_id
+        INNER JOIN posts post on post.id = post_watches.owner_post_id
+        INNER JOIN post_descriptors pd on pd.id = post.owner_post_descriptor_id
         WHERE account.account_id = $1
     "#;
 
