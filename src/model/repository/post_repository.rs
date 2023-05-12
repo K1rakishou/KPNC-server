@@ -256,36 +256,45 @@ pub async fn get_all_watched_threads(
     return Ok(thread_descriptors);
 }
 
-pub async fn mark_all_thread_posts_dead(
+pub async fn mark_thread_as_dead(
     database: &Arc<Database>,
-    thread_descriptor: &ThreadDescriptor
+    thread_descriptor: &ThreadDescriptor,
+    delete_cached_thread: bool
 ) -> anyhow::Result<()> {
-    let thread_post_db_ids = post_descriptor_id_repository::get_thread_post_db_ids(
+    let thread_db_id = post_descriptor_id_repository::get_thread_db_id(
         thread_descriptor
     ).await;
 
+    if thread_db_id.is_none() {
+        return Ok(());
+    }
+
+    let thread_db_id = thread_db_id.unwrap();
+
     let query = r#"
-        UPDATE posts
+        UPDATE threads
         SET is_dead = TRUE
-        WHERE posts.owner_post_descriptor_id IN ({QUERY_PARAMS})
+        WHERE threads.id = $1
     "#;
 
-    let (query, query_params) = db_helpers::format_query_params(
-        query,
-        "{QUERY_PARAMS}",
-        &thread_post_db_ids
-    )?;
-
     let connection = database.connection().await?;
-    let statement = connection.prepare(query.as_str()).await?;
+    let statement = connection.prepare(query).await?;
 
-    connection.execute(&statement, &query_params[..])
+    connection.execute(&statement, &[&thread_db_id])
         .await
         .context(format!("Failed to update is_dead flag for thread {}", thread_descriptor))?;
 
-    post_descriptor_id_repository::delete_all_thread_posts(thread_descriptor).await;
+    if delete_cached_thread {
+        post_descriptor_id_repository::delete_all_thread_posts(thread_descriptor).await;
+    } else {
+        post_descriptor_id_repository::mark_thread_as_dead(thread_descriptor).await;
+    }
 
     return Ok(());
+}
+
+pub async fn delete_all_dead_threads() -> usize {
+    return post_descriptor_id_repository::delete_all_dead_threads().await;
 }
 
 pub async fn find_new_replies(

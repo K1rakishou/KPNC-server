@@ -199,7 +199,7 @@ async fn process_thread(
             thread_descriptor
         );
 
-        post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+        post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
         return Ok(());
     }
 
@@ -218,7 +218,7 @@ async fn process_thread(
                 thread_descriptor
             );
 
-            post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+            post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
         }
 
         return Ok(());
@@ -278,7 +278,7 @@ async fn process_thread(
                 thread_descriptor
             );
 
-            post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+            post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
         }
 
         return Ok(());
@@ -344,12 +344,9 @@ async fn process_thread(
             chan_thread.closed,
         );
 
-        // TODO: this is probably not entirely correct. Right now this function will also
-        //  delete post/thread descriptors from the caches as well. We probably don't want to do
-        //  that here since we also need to send unsent FCM messages and that won't work with no
-        //  post/thread descriptors in the caches. Instead, we should only mark threads as dead in
-        //  the database and actually deleted them after we sent all unsent FCM messages.
-        post_repository::mark_all_thread_posts_dead(database, thread_descriptor).await?;
+        // Do not delete the cached posts here, we still want to process them.
+        // Only mark the threads as dead
+        post_repository::mark_thread_as_dead(database, thread_descriptor, false).await?;
 
         // Fall through. We still want to send the last batch of messages if there are new replies
         // to watched posts. We won't be processing this thread on the next iteration, though,

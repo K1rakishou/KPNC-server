@@ -18,23 +18,29 @@ lazy_static! {
     static ref PD_TO_DBID_CACHE: RwLock<HashMap<PostDescriptor, i64>> =
         RwLock::new(HashMap::with_capacity(4096));
 
-    static ref DBID_TO_TD_CACHE: RwLock<HashMap<i64, ThreadDescriptor>> =
+    static ref DBID_TO_CT_CACHE: RwLock<HashMap<i64, ChanThread>> =
         RwLock::new(HashMap::with_capacity(1024));
     static ref TD_TO_DBID_CACHE: RwLock<HashMap<ThreadDescriptor, i64>> =
         RwLock::new(HashMap::with_capacity(1024));
 }
 
+#[derive(Debug, Clone)]
+struct ChanThread {
+    thread_descriptor: ThreadDescriptor,
+    is_dead: bool
+}
+
 pub async fn init(database: &Arc<Database>) -> anyhow::Result<()> {
     info!("init() start");
 
-    cache_thread_descriptors(database).await?;
-    cache_post_descriptors(database).await?;
+    populate_thread_descriptors_cache(database).await?;
+    populate_post_descriptors_cache(database).await?;
 
     info!("init() end");
     return Ok(());
 }
 
-async fn cache_thread_descriptors(database: &Arc<Database>) -> anyhow::Result<()> {
+async fn populate_thread_descriptors_cache(database: &Arc<Database>) -> anyhow::Result<()> {
     let query = r#"
         SELECT
             thread.id,
@@ -54,10 +60,10 @@ async fn cache_thread_descriptors(database: &Arc<Database>) -> anyhow::Result<()
     let rows = connection.query(query, &[]).await?;
 
     let mut loaded_thread_descriptors = 0;
-    info!("cache_thread_descriptors() found {} rows", rows.len());
+    info!("populate_thread_descriptors_cache() found {} rows", rows.len());
 
     {
-        let mut dbid_to_td_cache_locked = DBID_TO_TD_CACHE.write().await;
+        let mut dbid_to_ct_cache_locked = DBID_TO_CT_CACHE.write().await;
         let mut td_to_dbid_cache_locked = TD_TO_DBID_CACHE.write().await;
 
         for row in rows {
@@ -73,17 +79,26 @@ async fn cache_thread_descriptors(database: &Arc<Database>) -> anyhow::Result<()
             );
 
             td_to_dbid_cache_locked.insert(thread_descriptor.clone(), id);
-            dbid_to_td_cache_locked.insert(id, thread_descriptor);
+
+            let chan_thread = ChanThread {
+                thread_descriptor,
+                is_dead: false,
+            };
+            dbid_to_ct_cache_locked.insert(id, chan_thread);
 
             loaded_thread_descriptors += 1;
         }
     }
 
-    info!("cache_thread_descriptors() end, loaded_thread_descriptors: {}", loaded_thread_descriptors);
+    info!(
+        "populate_thread_descriptors_cache() end, loaded_thread_descriptors: {}",
+        loaded_thread_descriptors
+    );
+
     return Ok(());
 }
 
-async fn cache_post_descriptors(database: &Arc<Database>) -> anyhow::Result<()> {
+async fn populate_post_descriptors_cache(database: &Arc<Database>) -> anyhow::Result<()> {
     let query = r#"
         WITH alive_threads AS (
             SELECT
@@ -121,7 +136,7 @@ async fn cache_post_descriptors(database: &Arc<Database>) -> anyhow::Result<()> 
     let rows = connection.query(query, &[]).await?;
 
     let mut loaded_post_descriptors = 0;
-    info!("cache_post_descriptors() found {} rows", rows.len());
+    info!("populate_post_descriptors_cache() found {} rows", rows.len());
 
     {
         let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
@@ -152,12 +167,95 @@ async fn cache_post_descriptors(database: &Arc<Database>) -> anyhow::Result<()> 
         }
     }
 
-    info!("cache_post_descriptors() end, loaded_post_descriptors: {}", loaded_post_descriptors);
+    info!(
+        "populate_post_descriptors_cache() end, loaded_post_descriptors: {}",
+        loaded_post_descriptors
+    );
+
     return Ok(());
 }
 
+pub async fn mark_thread_as_dead(thread_descriptor: &ThreadDescriptor) {
+    let mut dbid_to_ct_cache_locked = DBID_TO_CT_CACHE.write().await;
+    let td_to_dbid_cache_locked = TD_TO_DBID_CACHE.write().await;
+
+    let thread_db_id = td_to_dbid_cache_locked.get(thread_descriptor);
+    if thread_db_id.is_none() {
+        return;
+    }
+
+    let thread_db_id = thread_db_id.unwrap();
+
+    let chan_thread = dbid_to_ct_cache_locked.get_mut(thread_db_id);
+    if chan_thread.is_none() {
+        return;
+    }
+
+    let chan_thread = chan_thread.unwrap();
+    chan_thread.is_dead = true;
+}
+
+pub async fn delete_all_dead_threads() -> usize {
+    let mut dbid_to_ct_cache_locked = DBID_TO_CT_CACHE.write().await;
+    if dbid_to_ct_cache_locked.is_empty() {
+        return 0
+    }
+
+    let mut td_to_dbid_cache_locked = TD_TO_DBID_CACHE.write().await;
+    let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
+    let mut dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.write().await;
+    let mut pd_to_td_cache_locked = PD_TO_TD_CACHE.write().await;
+
+    let mut thread_descriptors_to_delete = HashSet::<ThreadDescriptor>::with_capacity(32);
+
+    for (_, chan_thread) in dbid_to_ct_cache_locked.iter() {
+        if chan_thread.is_dead {
+            thread_descriptors_to_delete.insert(chan_thread.thread_descriptor.clone());
+        }
+    }
+
+    if thread_descriptors_to_delete.is_empty() {
+        return 0;
+    }
+
+    for thread_descriptor in thread_descriptors_to_delete.iter() {
+        let thread_db_id = td_to_dbid_cache_locked.remove(thread_descriptor);
+        if thread_db_id.is_some() {
+            dbid_to_ct_cache_locked.remove(&thread_db_id.unwrap());
+        }
+
+        let thread_posts = pd_to_td_cache_locked.remove(thread_descriptor);
+        if thread_posts.is_none() {
+            continue;
+        }
+
+        let thread_posts = thread_posts.unwrap();
+        if thread_posts.is_empty() {
+            continue;
+        }
+
+        for thread_post in &thread_posts {
+            pd_to_dbid_cache_locked.remove(thread_post);
+        }
+
+        let mut to_remove = Vec::<i64>::with_capacity(thread_posts.len());
+
+        for (db_id, post_descriptor) in dbid_to_pd_cache_locked.iter() {
+            if thread_posts.contains(post_descriptor) {
+                to_remove.push(*db_id);
+            }
+        }
+
+        for db_id in to_remove {
+            dbid_to_pd_cache_locked.remove(&db_id);
+        }
+    }
+
+    return thread_descriptors_to_delete.len();
+}
+
 pub async fn delete_all_thread_posts(thread_descriptor: &ThreadDescriptor) {
-    let mut dbid_to_td_cache_locked = DBID_TO_TD_CACHE.write().await;
+    let mut dbid_to_ct_cache_locked = DBID_TO_CT_CACHE.write().await;
     let mut td_to_dbid_cache_locked = TD_TO_DBID_CACHE.write().await;
 
     let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
@@ -166,7 +264,7 @@ pub async fn delete_all_thread_posts(thread_descriptor: &ThreadDescriptor) {
 
     let thread_db_id = td_to_dbid_cache_locked.remove(thread_descriptor);
     if thread_db_id.is_some() {
-        dbid_to_td_cache_locked.remove(&thread_db_id.unwrap());
+        dbid_to_ct_cache_locked.remove(&thread_db_id.unwrap());
     }
 
     let thread_posts = pd_to_td_cache_locked.remove(thread_descriptor);
@@ -292,6 +390,11 @@ pub async fn get_thread_post_db_ids(thread_descriptor: &ThreadDescriptor) -> Vec
     }
 
     return result_vec;
+}
+
+pub async fn get_thread_db_id(thread_descriptor: &ThreadDescriptor) -> Option<i64> {
+    let td_to_dbid_cache_locked = TD_TO_DBID_CACHE.read().await;
+    return td_to_dbid_cache_locked.get(thread_descriptor).cloned()
 }
 
 pub async fn insert_post_descriptor_db_id(
@@ -550,11 +653,16 @@ fn insert_pd_for_td(
 }
 
 async fn insert_thread_descriptor_into_cache(thread_descriptor: &ThreadDescriptor, id: i64) {
-    let mut dbid_to_td_cache_locked = DBID_TO_TD_CACHE.write().await;
+    let mut dbid_to_ct_cache_locked = DBID_TO_CT_CACHE.write().await;
     let mut td_to_td_cache_locked = TD_TO_DBID_CACHE.write().await;
 
     td_to_td_cache_locked.insert(thread_descriptor.clone(), id);
-    dbid_to_td_cache_locked.insert(id, thread_descriptor.clone());
+
+    let chan_thread = ChanThread {
+        thread_descriptor: thread_descriptor.clone(),
+        is_dead: false
+    };
+    dbid_to_ct_cache_locked.insert(id, chan_thread);
 }
 
 async fn insert_post_descriptor_into_cache(post_descriptor: &PostDescriptor, id: i64) {
@@ -568,14 +676,14 @@ async fn insert_post_descriptor_into_cache(post_descriptor: &PostDescriptor, id:
 }
 
 pub async fn test_cleanup() {
-    let mut dbid_to_td_cache = DBID_TO_TD_CACHE.write().await;
+    let mut dbid_to_ct_cache = DBID_TO_CT_CACHE.write().await;
     let mut dt_to_dbid_cache = TD_TO_DBID_CACHE.write().await;
 
     let mut pd_to_dbid_cache_locked = PD_TO_DBID_CACHE.write().await;
     let mut dbid_to_pd_cache_locked = DBID_TO_PD_CACHE.write().await;
     let mut pd_to_td_cache_locked = PD_TO_TD_CACHE.write().await;
 
-    dbid_to_td_cache.clear();
+    dbid_to_ct_cache.clear();
     dt_to_dbid_cache.clear();
     pd_to_dbid_cache_locked.clear();
     dbid_to_pd_cache_locked.clear();

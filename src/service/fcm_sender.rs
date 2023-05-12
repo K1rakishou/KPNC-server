@@ -11,8 +11,8 @@ use tokio::task::JoinHandle;
 
 use crate::{error, info};
 use crate::model::database::db::Database;
+use crate::model::repository::{post_reply_repository, post_repository};
 use crate::model::repository::account_repository::AccountToken;
-use crate::model::repository::post_reply_repository;
 use crate::model::repository::post_reply_repository::UnsentReply;
 use crate::model::repository::site_repository::SiteRepository;
 
@@ -149,6 +149,13 @@ impl FcmSender {
                 failed_to_send_post_reply_ids_set.len()
             );
         }
+
+        let deleted_threads_count = post_repository::delete_all_dead_threads().await;
+
+        info!(
+            "send_fcm_messages() Deleted {} dead threads from the cache",
+            deleted_threads_count
+        );
 
         return Ok(sent_replies.load(Ordering::Relaxed));
     }
