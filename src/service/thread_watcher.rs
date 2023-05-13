@@ -6,9 +6,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, FixedOffset};
-use lazy_static::lazy_static;
 use regex::Regex;
-use reqwest::Client;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
@@ -16,13 +14,10 @@ use crate::{error, info};
 use crate::helpers::post_helpers;
 use crate::model::data::chan::{ChanThread, PostDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
+use crate::model::imageboards::base_imageboard::ThreadLoadResult;
 use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, post_repository, thread_repository};
 use crate::model::repository::site_repository::SiteRepository;
 use crate::service::fcm_sender::FcmSender;
-
-lazy_static! {
-    static ref HTTP_CLIENT: Client = reqwest::Client::new();
-}
 
 pub struct ThreadWatcher {
     num_cpus: u32,
@@ -192,149 +187,88 @@ async fn process_thread(
     database: &Arc<Database>,
     site_repository: &Arc<SiteRepository>
 ) -> anyhow::Result<()> {
-    let thread_json_endpoint = site_repository.thread_json_endpoint(thread_descriptor);
-    if thread_json_endpoint.is_none() {
-        error!(
-            "process_thread({}) marking thread as dead because the site is not supported",
-            thread_descriptor
-        );
-
-        post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
-        return Ok(());
-    }
-
-    let thread_json_endpoint = thread_json_endpoint.unwrap();
-
-    let head_request = HTTP_CLIENT.head(thread_json_endpoint.clone()).build()?;
-    let head_response = HTTP_CLIENT.execute(head_request).await?;
-
-    let head_request_status_code = head_response.status().as_u16();
-    if head_request_status_code != 200 {
-        error!("process_thread({}) (HEAD) bad status code {}", thread_descriptor, head_request_status_code);
-
-        if head_request_status_code == 404 {
-            error!(
-                "process_thread({}) (HEAD) marking thread as dead because status code is 404",
-                thread_descriptor
-            );
-
-            post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
-        }
-
-        return Ok(());
-    }
-
-    let last_modified_str = head_response.headers()
-        .get("Last-Modified")
-        .map(|header_value| header_value.to_str().unwrap_or(""))
-        .unwrap_or("");
-
-    let last_modified = DateTime::parse_from_rfc2822(last_modified_str);
-    let last_modified: Option<DateTime<FixedOffset>> = if last_modified.is_err() {
-        error!(
-            "process_thread({}) Failed to parse \'{}\' as DateTime (last_modified)",
-            thread_descriptor,
-            last_modified_str
-        );
-
-        None
-    } else {
-        Some(last_modified.unwrap())
-    };
-
-    let thread_updated_since_last_check = was_content_modified_since_last_check(
+    let last_processed_post = thread_repository::get_last_processed_post(
         thread_descriptor,
-        &last_modified,
         database
     ).await?;
 
-    if !thread_updated_since_last_check {
+    if last_processed_post.is_some() {
         info!(
-            "process_thread({}) content wasn't modified since last check, exiting",
-            thread_descriptor
+            "process_thread({}) last_processed_post: {}",
+            thread_descriptor,
+            last_processed_post.clone().unwrap()
         );
-
-        return Ok(())
+    } else {
+        info!(
+            "process_thread({}) last_processed_post: None",
+            thread_descriptor,
+        );
     }
 
-    let request = HTTP_CLIENT.get(thread_json_endpoint.clone()).build()?;
-    let response = HTTP_CLIENT.execute(request)
-        .await
-        .with_context(|| {
-            return format!(
-                "process_thread({}) Failed to execute GET request to \'{}\' endpoint",
-                thread_descriptor,
-                thread_json_endpoint
-            );
-        })?;
+    let thread_load_result = site_repository.load_thread(
+        database,
+        &last_processed_post,
+        thread_descriptor,
+    ).await?;
 
-    let status_code = response.status().as_u16();
-    if status_code != 200 {
-        error!("process_thread({}) bad status code {}", thread_descriptor, status_code);
-
-        if status_code == 404 {
+    let (chan_thread, last_modified) = match thread_load_result {
+        ThreadLoadResult::Success(chan_thread, last_modified) => { (chan_thread, last_modified) }
+        ThreadLoadResult::SiteNotSupported => {
             error!(
-                "process_thread({}) marking thread as dead because status code is 404",
+                "process_thread({}) marking thread as dead because the site is not supported",
                 thread_descriptor
             );
 
             post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
+            return Ok(());
         }
+        ThreadLoadResult::HeadRequestBadStatusCode(status_code) => {
+            error!("process_thread({}) (HEAD) bad status code {}", thread_descriptor, status_code);
 
-        return Ok(());
-    }
+            if status_code == 404 {
+                error!(
+                    "process_thread({}) (HEAD) marking thread as dead because status code is 404",
+                    thread_descriptor
+                );
 
-    let response_text = response.text()
-        .await
-        .with_context(|| {
-            return format!(
-                "process_thread({}) Failed to extract text from response",
+                post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
+            }
+
+            return Ok(());
+        }
+        ThreadLoadResult::GetRequestBadStatusCode(status_code) => {
+            error!("process_thread({}) bad status code {}", thread_descriptor, status_code);
+
+            if status_code == 404 {
+                error!(
+                    "process_thread({}) marking thread as dead because status code is 404",
+                    thread_descriptor
+                );
+
+                post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
+            }
+
+            return Ok(());
+        }
+        ThreadLoadResult::ThreadWasNotModifiedSinceLastCheck => {
+            info!(
+                "process_thread({}) content wasn't modified since last check, exiting",
                 thread_descriptor
             );
-        })?;
 
-    let chan_thread = site_repository.read_thread_json(
-        thread_descriptor.site_descriptor(),
-        &response_text
-    );
+            return Ok(())
+        }
+        ThreadLoadResult::FailedToReadChanThread(body_text_part) => {
+            error!(
+                "process_thread({}) Failed to convert response_text into ChanThread. Body text: \'{}\'",
+                thread_descriptor,
+                body_text_part
+            );
 
-    if chan_thread.is_err() {
-        let to_print_chars_count = 512;
-        let chars = response_text.chars();
-        let chars_count = chars.size_hint().0;
-        let text: Vec<u16> = chars.take(to_print_chars_count).map(|ch| ch as u16).collect();
+            return Err(anyhow!("Failed to read ChanThread"));
+        }
+    };
 
-        let body_text = if text.is_empty() {
-            String::from("<body is empty>")
-        } else {
-            if chars_count < to_print_chars_count {
-                String::from_utf16_lossy(text.as_slice())
-            } else {
-                let remaining_chars_count = chars_count - to_print_chars_count;
-                format!("{} (+{} more)", String::from_utf16_lossy(text.as_slice()), remaining_chars_count)
-            }
-        };
-
-        let error = chan_thread.err().unwrap();
-
-        error!(
-            "process_thread({}) Failed to convert response_text into ChanThread. \
-            Error: \'{}\'. Body text: \'{}\'",
-            thread_descriptor,
-            error,
-            body_text
-        );
-
-        return Err(anyhow!(error));
-    }
-
-    let chan_thread = chan_thread.unwrap();
-    if chan_thread.is_none() {
-        error!("process_thread({}) Failed to read thread json", thread_descriptor);
-        return Err(anyhow!("Failed to read thread json (None returned)"))
-    }
-
-    let chan_thread = chan_thread.unwrap();
     if chan_thread.is_not_active() {
         info!(
             "process_thread({}) marking thread as dead it's either archived or closed \
@@ -361,6 +295,7 @@ async fn process_thread(
 
     process_posts(
         site_repository,
+        &last_processed_post,
         thread_descriptor,
         &chan_thread,
         database
@@ -385,44 +320,9 @@ async fn process_thread(
     return Ok(());
 }
 
-async fn was_content_modified_since_last_check(
-    thread_descriptor: &ThreadDescriptor,
-    last_modified_remote: &Option<DateTime<FixedOffset>>,
-    database: &Arc<Database>
-) -> anyhow::Result<bool> {
-    if last_modified_remote.is_none() {
-        return Ok(true)
-    }
-
-    let last_modified_local = thread_repository::get_last_modified(
-        thread_descriptor,
-        database
-    ).await?;
-
-    if last_modified_local.is_none() {
-        return Ok(true);
-    }
-
-    let last_modified_remote = last_modified_remote.unwrap();
-    let last_modified_local = last_modified_local.unwrap();
-    let content_was_modified = last_modified_remote > last_modified_local;
-
-    info!(
-        "was_content_modified_since_last_check({}) \
-        last_modified_remote: {}, \
-        last_modified_local: {}, \
-        content_was_modified: {}",
-        thread_descriptor,
-        last_modified_remote,
-        last_modified_local,
-        content_was_modified
-    );
-
-    return Ok(content_was_modified);
-}
-
 async fn process_posts(
     site_repository: &Arc<SiteRepository>,
+    last_processed_post: &Option<PostDescriptor>,
     thread_descriptor: &ThreadDescriptor,
     chan_thread: &ChanThread,
     database: &Arc<Database>
@@ -441,24 +341,6 @@ async fn process_posts(
     }
 
     let imageboard = imageboard.unwrap();
-
-    let last_processed_post = thread_repository::get_last_processed_post(
-        thread_descriptor,
-        database
-    ).await?;
-
-    if last_processed_post.is_some() {
-        info!(
-            "process_posts({}) last_processed_post: {}",
-            thread_descriptor,
-            last_processed_post.clone().unwrap()
-        );
-    } else {
-        info!(
-            "process_posts({}) last_processed_post: None",
-            thread_descriptor,
-        );
-    }
 
     let mut found_post_replies_set =
         HashSet::<FoundPostReply>::with_capacity(chan_thread.posts.len());
@@ -557,7 +439,7 @@ pub async fn find_and_store_new_post_replies(
 fn find_post_replies(
     thread_descriptor: &ThreadDescriptor,
     chan_thread: &ChanThread,
-    last_processed_post: Option<PostDescriptor>,
+    last_processed_post: &Option<PostDescriptor>,
     found_post_replies_set: &mut HashSet<FoundPostReply>,
     new_posts_count: &mut i32,
     post_quote_regex: &Regex

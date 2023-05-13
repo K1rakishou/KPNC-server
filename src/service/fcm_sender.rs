@@ -81,6 +81,7 @@ impl FcmSender {
         let mut join_handles: Vec<JoinHandle<()>> = Vec::with_capacity(chunk_size);
         let semaphore = Arc::new(tokio::sync::Semaphore::new(chunk_size));
         let sent_replies = Arc::new(AtomicU64::new(0));
+        let is_dev_build = self.is_dev_build;
 
         for (account_token, unsent_replies) in unsent_replies {
             if unsent_replies.is_empty() {
@@ -97,6 +98,7 @@ impl FcmSender {
 
             let join_handle = tokio::task::spawn(async move {
                 let result = send_unsent_reply(
+                    is_dev_build,
                     &FCM_CLIENT,
                     &firebase_api_key_cloned,
                     &account_token_cloned,
@@ -162,6 +164,7 @@ impl FcmSender {
 }
 
 async fn send_unsent_reply(
+    is_dev_build: bool,
     client: &fcm::Client,
     firebase_api_key: &String,
     account_token: &AccountToken,
@@ -189,10 +192,21 @@ async fn send_unsent_reply(
     };
 
     info!(
-        "send_unsent_reply({}) new_fcm_replies_message: {:?}",
+        "send_unsent_reply({}) new_reply_messages: {}",
         account_token,
-        new_fcm_replies_message
+        new_fcm_replies_message.new_reply_messages.len()
     );
+
+    if is_dev_build {
+        for new_reply_message in &new_fcm_replies_message.new_reply_messages {
+            info!(
+                "send_unsent_reply({}) reply_id: {}, new_reply_url: {}",
+                account_token,
+                new_reply_message.reply_id,
+                new_reply_message.new_reply_url
+            );
+        }
+    }
 
     let new_fcm_replies_message_json = serde_json::to_string(&new_fcm_replies_message)?;
 

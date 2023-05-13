@@ -1,13 +1,18 @@
-use std::str::FromStr;
+use std::sync::Arc;
 
+use anyhow::Context;
+use async_trait::async_trait;
+use chrono::{DateTime, FixedOffset};
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 use serde::Deserialize;
 use url::Url;
 
+use crate::error;
 use crate::helpers::string_helpers;
 use crate::model::data::chan::{ChanPost, ChanThread, PostDescriptor, SiteDescriptor, ThreadDescriptor};
-use crate::model::imageboards::base_imageboard::Imageboard;
+use crate::model::database::db::Database;
+use crate::model::imageboards::base_imageboard::{Imageboard, post_url_to_post_descriptor, ThreadLoadResult, was_content_modified_since_last_check};
 
 lazy_static! {
     static ref POST_URL_REGEX: Regex =
@@ -17,7 +22,7 @@ lazy_static! {
 }
 
 pub struct Chan4 {
-
+    pub http_client: &'static reqwest::Client
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +39,7 @@ struct Chan4Thread {
     posts: Vec<Chan4Post>
 }
 
+#[async_trait]
 impl Imageboard for Chan4 {
     fn name(&self) -> &'static str {
         return "4chan";
@@ -67,54 +73,7 @@ impl Imageboard for Chan4 {
     }
 
     fn post_url_to_post_descriptor(&self, post_url: &str) -> Option<PostDescriptor> {
-        if !self.url_matches(post_url) {
-            return None;
-        }
-
-        let captures = POST_URL_REGEX.captures(post_url);
-        if captures.is_none() {
-            return None;
-        }
-
-        let captures = captures.unwrap();
-
-        let site_name = captures.get(1)?.as_str();
-        if site_name.is_empty() {
-            return None;
-        }
-
-        let board_code = captures.get(2)?.as_str();
-        if board_code.is_empty() {
-            return None
-        }
-
-        let thread_no_raw = captures.get(3)?.as_str();
-        let thread_no = u64::from_str(thread_no_raw);
-        if thread_no.is_err() {
-            return None;
-        }
-        let thread_no = thread_no.unwrap();
-
-        let post_no = captures.get(4).map(|post_no| post_no.as_str()).unwrap_or("");
-        if post_no.is_empty() {
-            return None;
-        }
-
-        let post_no = u64::from_str(post_no);
-        if post_no.is_err() {
-            return None;
-        }
-        let post_no = post_no.unwrap();
-
-        let post_descriptor = PostDescriptor::new(
-            String::from(site_name),
-            String::from(board_code),
-            thread_no,
-            post_no,
-            0
-        );
-
-        return Some(post_descriptor);
+        return post_url_to_post_descriptor(self, post_url, &POST_URL_REGEX);
     }
 
     fn post_descriptor_to_url(&self, post_descriptor: &PostDescriptor) -> Option<String> {
@@ -161,43 +120,139 @@ impl Imageboard for Chan4 {
         return &POST_REPLY_QUOTE_REGEX;
     }
 
-    fn read_thread_json(&self, json: &String) -> anyhow::Result<Option<ChanThread>> {
-        let chan4_thread = serde_json::from_str::<Chan4Thread>(json)?;
-        if chan4_thread.posts.is_empty() {
-            return Ok(None);
+    async fn load_thread(
+        &self,
+        database: &Arc<Database>,
+        thread_descriptor: &ThreadDescriptor,
+        last_processed_post: &Option<PostDescriptor>,
+        thread_json_endpoint: &String
+    ) -> anyhow::Result<ThreadLoadResult> {
+        let head_request = self.http_client.head(thread_json_endpoint.clone()).build()?;
+        let head_response = self.http_client.execute(head_request).await?;
+
+        let head_request_status_code = head_response.status().as_u16();
+        if head_request_status_code != 200 {
+            return Ok(ThreadLoadResult::HeadRequestBadStatusCode(head_request_status_code));
         }
 
-        let original_post = chan4_thread.posts.first();
-        if original_post.is_none() {
-            return Ok(None);
-        }
+        let last_modified_str = head_response.headers()
+            .get("Last-Modified")
+            .map(|header_value| header_value.to_str().unwrap_or(""))
+            .unwrap_or("");
 
-        let original_post = original_post.unwrap();
-        let mut chan_posts = Vec::<ChanPost>::with_capacity(chan4_thread.posts.len());
+        let last_modified = DateTime::parse_from_rfc2822(last_modified_str);
+        let last_modified: Option<DateTime<FixedOffset>> = if last_modified.is_err() {
+            error!(
+                "process_thread({}) Failed to parse \'{}\' as DateTime (last_modified)",
+                thread_descriptor,
+                last_modified_str
+            );
 
-        for chan4_post in &chan4_thread.posts {
-            let chan_post = ChanPost {
-                post_no: chan4_post.no,
-                post_sub_no: None,
-                comment_unparsed: chan4_post.com.clone()
-            };
-
-            chan_posts.push(chan_post);
-        }
-
-        let chan_thread = ChanThread {
-            posts: chan_posts,
-            closed: original_post.closed.unwrap_or(0) == 1,
-            archived: original_post.archived.unwrap_or(0) == 1,
+            None
+        } else {
+            Some(last_modified.unwrap())
         };
 
-        return Ok(Some(chan_thread));
+        let thread_updated_since_last_check = was_content_modified_since_last_check(
+            thread_descriptor,
+            &last_modified,
+            database
+        ).await?;
+
+        if !thread_updated_since_last_check {
+            return Ok(ThreadLoadResult::ThreadWasNotModifiedSinceLastCheck);
+        }
+
+        let request = self.http_client.get(thread_json_endpoint.clone()).build()?;
+        let response = self.http_client.execute(request)
+            .await
+            .with_context(|| {
+                return format!(
+                    "process_thread({}) Failed to execute GET request to \'{}\' endpoint",
+                    thread_descriptor,
+                    thread_json_endpoint
+                );
+            })?;
+
+        let status_code = response.status().as_u16();
+        if status_code != 200 {
+            return Ok(ThreadLoadResult::GetRequestBadStatusCode(status_code));
+        }
+
+        let response_text = response.text()
+            .await
+            .with_context(|| {
+                return format!(
+                    "process_thread({}) Failed to extract text from response",
+                    thread_descriptor
+                );
+            })?;
+
+        let chan_thread = read_thread_json(
+            &response_text
+        )?;
+
+        if chan_thread.is_none() {
+            let to_print_chars_count = 512;
+            let chars = response_text.chars();
+            let chars_count = chars.size_hint().0;
+            let chars: Vec<u16> = chars.take(to_print_chars_count).map(|ch| ch as u16).collect();
+
+            let body_text = if chars.is_empty() {
+                String::from("<body is empty>")
+            } else {
+                if chars_count < to_print_chars_count {
+                    String::from_utf16_lossy(chars.as_slice())
+                } else {
+                    let remaining_chars_count = chars_count - to_print_chars_count;
+                    format!("{} (+{} more)", String::from_utf16_lossy(chars.as_slice()), remaining_chars_count)
+                }
+            };
+
+            return Ok(ThreadLoadResult::FailedToReadChanThread(body_text));
+        }
+
+        return Ok(ThreadLoadResult::Success(chan_thread.unwrap(), last_modified));
     }
 }
 
+fn read_thread_json(json: &String) -> anyhow::Result<Option<ChanThread>> {
+    let chan4_thread = serde_json::from_str::<Chan4Thread>(json)?;
+    if chan4_thread.posts.is_empty() {
+        return Ok(None);
+    }
+
+    let original_post = chan4_thread.posts.first();
+    if original_post.is_none() {
+        return Ok(None);
+    }
+
+    let original_post = original_post.unwrap();
+    let mut chan_posts = Vec::<ChanPost>::with_capacity(chan4_thread.posts.len());
+
+    for chan4_post in &chan4_thread.posts {
+        let chan_post = ChanPost {
+            post_no: chan4_post.no,
+            post_sub_no: None,
+            comment_unparsed: chan4_post.com.clone()
+        };
+
+        chan_posts.push(chan_post);
+    }
+
+    let chan_thread = ChanThread {
+        posts: chan_posts,
+        closed: original_post.closed.unwrap_or(0) == 1,
+        archived: original_post.archived.unwrap_or(0) == 1,
+    };
+
+    return Ok(Some(chan_thread));
+}
+
+
 #[test]
 fn test_url_conversion() {
-    let chan4 = Chan4 {};
+    let chan4 = Chan4 { http_client: &reqwest::Client::new() };
 
     let pd1 = chan4.post_url_to_post_descriptor(
         "https://boards.4chan.org/a/thread/1234567890#p1234567891"

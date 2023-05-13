@@ -38,8 +38,8 @@ impl Display for AccountToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "AccountToken(")?;
         write!(f, "{}, ", self.token.format_token())?;
-        write!(f, "{}, ", self.application_type)?;
-        write!(f, "{}", self.token_type)?;
+        write!(f, "{}, ", (self.application_type.clone() as u64))?;
+        write!(f, "{}", (self.token_type.clone() as u64))?;
         write!(f, ")")?;
         return Ok(());
     }

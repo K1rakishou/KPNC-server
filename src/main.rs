@@ -10,6 +10,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
+use lazy_static::lazy_static;
 use tokio::net::TcpListener;
 
 use crate::helpers::{logger, throttler};
@@ -30,6 +31,10 @@ mod helpers;
 
 #[cfg(test)]
 mod tests;
+
+lazy_static! {
+    static ref HTTP_CLIENT: reqwest::Client = reqwest::Client::new();
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -63,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     let listener = TcpListener::bind(addr).await?;
 
-    let site_repository = Arc::new(SiteRepository::new());
+    let site_repository = Arc::new(SiteRepository::new(&HTTP_CLIENT));
     let database_cloned_for_watcher = database.clone();
     let site_repository_for_watcher = site_repository.clone();
 

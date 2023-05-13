@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::model::data::chan::{ChanThread, PostDescriptor, SiteDescriptor, ThreadDescriptor};
-use crate::model::imageboards::base_imageboard::Imageboard;
+use crate::model::database::db::Database;
+use crate::model::imageboards::base_imageboard::{Imageboard, ThreadLoadResult};
 use crate::model::imageboards::chan4::Chan4;
 use crate::model::imageboards::dvach::Dvach;
 
@@ -13,13 +14,19 @@ pub struct SiteRepository {
 }
 
 impl SiteRepository {
-    pub fn new() -> SiteRepository {
+    pub fn new(http_client: &'static reqwest::Client) -> SiteRepository {
         let mut sites = HashMap::<String, ImageboardSynced>::new();
 
-        let chan4 = Chan4 {};
+        let chan4 = Chan4 {
+            http_client
+        };
+
         sites.insert(chan4.name().to_string(), Arc::new(chan4));
 
-        let dvach = Dvach {};
+        let dvach = Dvach {
+            http_client
+        };
+
         sites.insert(dvach.name().to_string(), Arc::new(dvach));
 
         return SiteRepository { sites };
@@ -62,18 +69,32 @@ impl SiteRepository {
         return None;
     }
 
-    pub fn read_thread_json(
+    pub async fn load_thread(
         &self,
-        site_descriptor: &SiteDescriptor,
-        json: &String
-    ) -> anyhow::Result<Option<ChanThread>> {
-        let imageboard = self.sites.get(site_descriptor.site_name());
+        database: &Arc<Database>,
+        last_processed_post: &Option<PostDescriptor>,
+        thread_descriptor: &ThreadDescriptor
+    ) -> anyhow::Result<ThreadLoadResult> {
+        let imageboard = self.by_site_descriptor(thread_descriptor.site_descriptor());
         if imageboard.is_none() {
-            return Ok(None);
+            return Ok(ThreadLoadResult::SiteNotSupported);
         }
 
         let imageboard = imageboard.unwrap();
-        return imageboard.read_thread_json(json)
+
+        let thread_json_endpoint = self.thread_json_endpoint(thread_descriptor);
+        if thread_json_endpoint.is_none() {
+            return Ok(ThreadLoadResult::SiteNotSupported);
+        }
+
+        let thread_json_endpoint = thread_json_endpoint.unwrap();
+
+        return imageboard.load_thread(
+            database,
+            thread_descriptor,
+            last_processed_post,
+            &thread_json_endpoint
+        ).await;
     }
 
 }
