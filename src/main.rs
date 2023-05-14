@@ -32,10 +32,6 @@ mod helpers;
 #[cfg(test)]
 mod tests;
 
-lazy_static! {
-    static ref HTTP_CLIENT: reqwest::Client = reqwest::Client::new();
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let is_dev_build = i32::from_str(
@@ -68,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     let listener = TcpListener::bind(addr).await?;
 
-    let site_repository = Arc::new(SiteRepository::new(&HTTP_CLIENT));
+    let site_repository = Arc::new(SiteRepository::new());
     let database_cloned_for_watcher = database.clone();
     let site_repository_for_watcher = site_repository.clone();
 

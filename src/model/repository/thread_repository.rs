@@ -16,8 +16,7 @@ pub async fn get_last_processed_post(
         WHERE threads.site_name = $1
           AND threads.board_code = $2
           AND threads.thread_no = $3
-          AND threads.last_processed_post_no IS NOT NULL
-          AND threads.last_processed_post_sub_no IS NOT NULL
+          AND threads.last_processed_post_no > 0
 "#;
 
     let connection = database.connection().await?;

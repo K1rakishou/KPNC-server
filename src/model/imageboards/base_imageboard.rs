@@ -17,15 +17,14 @@ pub trait Imageboard {
     fn url_matches(&self, url: &str) -> bool;
     fn post_url_to_post_descriptor(&self, post_url: &str) -> Option<PostDescriptor>;
     fn post_descriptor_to_url(&self, post_descriptor: &PostDescriptor) -> Option<String>;
-    fn thread_json_endpoint(&self, thread_descriptor: &ThreadDescriptor) -> Option<String>;
     fn post_quote_regex(&self) -> &'static Regex;
 
     async fn load_thread(
         &self,
+        http_client: &'static reqwest::Client,
         database: &Arc<Database>,
         thread_descriptor: &ThreadDescriptor,
-        last_processed_post: &Option<PostDescriptor>,
-        thread_json_endpoint: &String
+        last_processed_post: &Option<PostDescriptor>
     ) -> anyhow::Result<ThreadLoadResult>;
 }
 

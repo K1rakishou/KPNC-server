@@ -8,11 +8,18 @@ use regex::{Captures, Regex};
 use serde::Deserialize;
 use url::Url;
 
-use crate::error;
+use crate::{error, info};
 use crate::helpers::string_helpers;
 use crate::model::data::chan::{ChanPost, ChanThread, PostDescriptor, SiteDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
-use crate::model::imageboards::base_imageboard::{Imageboard, post_url_to_post_descriptor, ThreadLoadResult, was_content_modified_since_last_check};
+use crate::model::imageboards::base_imageboard::{
+    Imageboard,
+    post_url_to_post_descriptor,
+    ThreadLoadResult,
+    was_content_modified_since_last_check
+};
+use crate::model::imageboards::parser::chan4_post_parser;
+use crate::model::imageboards::parser::chan4_post_parser::ThreadParseResult;
 
 lazy_static! {
     static ref POST_URL_REGEX: Regex =
@@ -22,7 +29,6 @@ lazy_static! {
 }
 
 pub struct Chan4 {
-    pub http_client: &'static reqwest::Client
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,40 +105,49 @@ impl Imageboard for Chan4 {
         return Some(string.unwrap());
     }
 
-    fn thread_json_endpoint(
-        &self,
-        thread_descriptor: &ThreadDescriptor
-    ) -> Option<String> {
-        if !self.matches(&thread_descriptor.catalog_descriptor.site_descriptor) {
-            return None;
-        }
-
-        let endpoint = format!(
-            "https://a.4cdn.org/{}/thread/{}.json",
-            thread_descriptor.board_code(),
-            thread_descriptor.thread_no
-        );
-
-        return Some(endpoint);
-    }
-
     fn post_quote_regex(&self) -> &'static Regex {
         return &POST_REPLY_QUOTE_REGEX;
     }
 
     async fn load_thread(
         &self,
+        http_client: &'static reqwest::Client,
         database: &Arc<Database>,
         thread_descriptor: &ThreadDescriptor,
-        last_processed_post: &Option<PostDescriptor>,
-        thread_json_endpoint: &String
+        last_processed_post: &Option<PostDescriptor>
     ) -> anyhow::Result<ThreadLoadResult> {
-        let head_request = self.http_client.head(thread_json_endpoint.clone()).build()?;
-        let head_response = self.http_client.execute(head_request).await?;
+        info!(
+            "load_thread({}) using partial load: {}",
+            thread_descriptor,
+            last_processed_post.is_some()
+        );
 
-        let head_request_status_code = head_response.status().as_u16();
-        if head_request_status_code != 200 {
-            return Ok(ThreadLoadResult::HeadRequestBadStatusCode(head_request_status_code));
+        let thread_json_endpoint = thread_json_endpoint(self, thread_descriptor, last_processed_post);
+        if thread_json_endpoint.is_none() {
+            info!("load_thread({}) site is not supported", thread_descriptor);
+            return Ok(ThreadLoadResult::SiteNotSupported);
+        }
+
+        let thread_json_endpoint = thread_json_endpoint.unwrap();
+
+        let head_request = http_client.head(thread_json_endpoint.clone()).build()?;
+        let head_response = http_client.execute(head_request).await?;
+
+        let status_code = head_response.status().as_u16();
+        if status_code != 200 {
+            // Tail request is not available for this thread so use the regular one
+            if last_processed_post.is_some() && status_code == 404 {
+                info!("load_thread({}) HEAD status_code == 404, switching to full load", thread_descriptor);
+                return self.load_thread(
+                    http_client,
+                    database,
+                    thread_descriptor,
+                    &None
+                ).await;
+            }
+
+            error!("load_thread({}) HEAD status_code == 404", thread_descriptor);
+            return Ok(ThreadLoadResult::HeadRequestBadStatusCode(status_code));
         }
 
         let last_modified_str = head_response.headers()
@@ -143,7 +158,7 @@ impl Imageboard for Chan4 {
         let last_modified = DateTime::parse_from_rfc2822(last_modified_str);
         let last_modified: Option<DateTime<FixedOffset>> = if last_modified.is_err() {
             error!(
-                "process_thread({}) Failed to parse \'{}\' as DateTime (last_modified)",
+                "load_thread({}) Failed to parse \'{}\' as DateTime (last_modified)",
                 thread_descriptor,
                 last_modified_str
             );
@@ -160,15 +175,16 @@ impl Imageboard for Chan4 {
         ).await?;
 
         if !thread_updated_since_last_check {
+            info!("load_thread({}) Thread was not updated since last check", thread_descriptor);
             return Ok(ThreadLoadResult::ThreadWasNotModifiedSinceLastCheck);
         }
 
-        let request = self.http_client.get(thread_json_endpoint.clone()).build()?;
-        let response = self.http_client.execute(request)
+        let request = http_client.get(thread_json_endpoint.clone()).build()?;
+        let response = http_client.execute(request)
             .await
             .with_context(|| {
                 return format!(
-                    "process_thread({}) Failed to execute GET request to \'{}\' endpoint",
+                    "load_thread({}) Failed to execute GET request to \'{}\' endpoint",
                     thread_descriptor,
                     thread_json_endpoint
                 );
@@ -176,6 +192,18 @@ impl Imageboard for Chan4 {
 
         let status_code = response.status().as_u16();
         if status_code != 200 {
+            // Tail request is not available for this thread so use the regular one
+            if last_processed_post.is_some() && status_code == 404 {
+                info!("load_thread({}) GET status_code == 404, switching to full load", thread_descriptor);
+                return self.load_thread(
+                    http_client,
+                    database,
+                    thread_descriptor,
+                    &None
+                ).await;
+            }
+
+            error!("load_thread({}) GET status_code == 404", thread_descriptor);
             return Ok(ThreadLoadResult::GetRequestBadStatusCode(status_code));
         }
 
@@ -183,16 +211,18 @@ impl Imageboard for Chan4 {
             .await
             .with_context(|| {
                 return format!(
-                    "process_thread({}) Failed to extract text from response",
+                    "load_thread({}) Failed to extract text from response",
                     thread_descriptor
                 );
             })?;
 
-        let chan_thread = read_thread_json(
+        let thread_parse_result = chan4_post_parser::parse(
+            thread_descriptor,
+            last_processed_post,
             &response_text
-        )?;
+        );
 
-        if chan_thread.is_none() {
+        let thread_parse_result = if thread_parse_result.is_err() {
             let to_print_chars_count = 512;
             let chars = response_text.chars();
             let chars_count = chars.size_hint().0;
@@ -205,15 +235,78 @@ impl Imageboard for Chan4 {
                     String::from_utf16_lossy(chars.as_slice())
                 } else {
                     let remaining_chars_count = chars_count - to_print_chars_count;
-                    format!("{} (+{} more)", String::from_utf16_lossy(chars.as_slice()), remaining_chars_count)
+                    format!(
+                        "{} (+{} more)",
+                        String::from_utf16_lossy(chars.as_slice()),
+                        remaining_chars_count
+                    )
                 }
             };
 
-            return Ok(ThreadLoadResult::FailedToReadChanThread(body_text));
-        }
+            error!(
+                "load_thread({}) chan4_post_parser::parse() error: {}",
+                thread_descriptor,
+                thread_parse_result.err().unwrap()
+            );
 
-        return Ok(ThreadLoadResult::Success(chan_thread.unwrap(), last_modified));
+            return Ok(ThreadLoadResult::FailedToReadChanThread(body_text));
+        } else {
+            thread_parse_result.unwrap()
+        };
+
+        let chan_thread = match thread_parse_result {
+            ThreadParseResult::Ok(chan_thread) => { chan_thread }
+            ThreadParseResult::PartialParseFailed => {
+                info!(
+                    "load_thread({}) Failed to parse thread partially, switching to full load",
+                    thread_descriptor
+                );
+
+                return self.load_thread(
+                    http_client,
+                    database,
+                    thread_descriptor,
+                    &None
+                ).await;
+            }
+        };
+
+        info!(
+            "load_thread({}) success, is partial load: {}",
+            thread_descriptor,
+            last_processed_post.is_some()
+        );
+
+        return Ok(ThreadLoadResult::Success(chan_thread, last_modified));
     }
+}
+
+fn thread_json_endpoint(
+    chan4: &Chan4,
+    thread_descriptor: &ThreadDescriptor,
+    last_processed_post: &Option<PostDescriptor>
+) -> Option<String> {
+    if !chan4.matches(&thread_descriptor.catalog_descriptor.site_descriptor) {
+        return None;
+    }
+
+    if last_processed_post.is_none() {
+        let endpoint = format!(
+            "https://a.4cdn.org/{}/thread/{}.json",
+            thread_descriptor.board_code(),
+            thread_descriptor.thread_no
+        );
+
+        return Some(endpoint);
+    }
+
+    let endpoint = format!(
+        "https://a.4cdn.org/{}/thread/{}-tail.json",
+        thread_descriptor.board_code(),
+        thread_descriptor.thread_no
+    );
+
+    return Some(endpoint);
 }
 
 fn read_thread_json(json: &String) -> anyhow::Result<Option<ChanThread>> {
@@ -252,7 +345,7 @@ fn read_thread_json(json: &String) -> anyhow::Result<Option<ChanThread>> {
 
 #[test]
 fn test_url_conversion() {
-    let chan4 = Chan4 { http_client: &reqwest::Client::new() };
+    let chan4 = Chan4 { };
 
     let pd1 = chan4.post_url_to_post_descriptor(
         "https://boards.4chan.org/a/thread/1234567890#p1234567891"

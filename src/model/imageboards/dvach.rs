@@ -23,7 +23,6 @@ lazy_static! {
 
 
 pub struct Dvach {
-    pub http_client: &'static reqwest::Client
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,33 +104,27 @@ impl Imageboard for Dvach {
         return Some(string.unwrap());
     }
 
-    fn thread_json_endpoint(&self, thread_descriptor: &ThreadDescriptor) -> Option<String> {
-        if !self.matches(&thread_descriptor.catalog_descriptor.site_descriptor) {
-            return None;
-        }
-
-        let endpoint = format!(
-            "https://2ch.hk/{}/res/{}.json",
-            thread_descriptor.board_code(),
-            thread_descriptor.thread_no
-        );
-
-        return Some(endpoint);
-    }
-
     fn post_quote_regex(&self) -> &'static Regex {
         return &POST_REPLY_QUOTE_REGEX;
     }
 
     async fn load_thread(
         &self,
+        http_client: &'static reqwest::Client,
         database: &Arc<Database>,
         thread_descriptor: &ThreadDescriptor,
-        last_processed_post: &Option<PostDescriptor>,
-        thread_json_endpoint: &String
+        last_processed_post: &Option<PostDescriptor>
     ) -> anyhow::Result<ThreadLoadResult> {
-        let head_request = self.http_client.head(thread_json_endpoint.clone()).build()?;
-        let head_response = self.http_client.execute(head_request).await?;
+        if true {
+            // TODO:
+            return Ok(ThreadLoadResult::SiteNotSupported);
+        }
+
+        // TODO: remove me
+        let thread_json_endpoint = "";
+
+        let head_request = http_client.head(thread_json_endpoint.clone()).build()?;
+        let head_response = http_client.execute(head_request).await?;
 
         let head_request_status_code = head_response.status().as_u16();
         if head_request_status_code != 200 {
@@ -166,8 +159,8 @@ impl Imageboard for Dvach {
             return Ok(ThreadLoadResult::ThreadWasNotModifiedSinceLastCheck);
         }
 
-        let request = self.http_client.get(thread_json_endpoint.clone()).build()?;
-        let response = self.http_client.execute(request)
+        let request = http_client.get(thread_json_endpoint.clone()).build()?;
+        let response = http_client.execute(request)
             .await
             .with_context(|| {
                 return format!(
@@ -219,6 +212,23 @@ impl Imageboard for Dvach {
     }
 }
 
+fn thread_json_endpoint(
+    imageboard: &dyn Imageboard,
+    thread_descriptor: &ThreadDescriptor
+) -> Option<String> {
+    if !imageboard.matches(&thread_descriptor.catalog_descriptor.site_descriptor) {
+        return None;
+    }
+
+    let endpoint = format!(
+        "https://2ch.hk/{}/res/{}.json",
+        thread_descriptor.board_code(),
+        thread_descriptor.thread_no
+    );
+
+    return Some(endpoint);
+}
+
 fn read_thread_json(json: &String) -> anyhow::Result<Option<ChanThread>> {
     let dvach_threads = serde_json::from_str::<DvachThreads>(json)?;
     if dvach_threads.threads.is_empty() {
@@ -261,7 +271,7 @@ fn read_thread_json(json: &String) -> anyhow::Result<Option<ChanThread>> {
 
 #[test]
 fn test_url_conversion() {
-    let dvach = Dvach { http_client: &reqwest::Client::new() };
+    let dvach = Dvach { };
 
     let pd1 = dvach.post_url_to_post_descriptor(
         "https://2ch.hk/test/res/197273.html#197871"

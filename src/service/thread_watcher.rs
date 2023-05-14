@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
-use chrono::{DateTime, FixedOffset};
+use lazy_static::lazy_static;
 use regex::Regex;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -18,6 +18,10 @@ use crate::model::imageboards::base_imageboard::ThreadLoadResult;
 use crate::model::repository::{post_descriptor_id_repository, post_reply_repository, post_repository, thread_repository};
 use crate::model::repository::site_repository::SiteRepository;
 use crate::service::fcm_sender::FcmSender;
+
+lazy_static! {
+    static ref HTTP_CLIENT: reqwest::Client = reqwest::Client::new();
+}
 
 pub struct ThreadWatcher {
     num_cpus: u32,
@@ -206,6 +210,7 @@ async fn process_thread(
     }
 
     let thread_load_result = site_repository.load_thread(
+        &HTTP_CLIENT,
         database,
         &last_processed_post,
         thread_descriptor,
