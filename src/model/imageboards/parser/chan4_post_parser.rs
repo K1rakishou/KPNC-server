@@ -5,10 +5,12 @@ use serde::Deserialize;
 use crate::{error, info};
 use crate::helpers::post_helpers::compare_post_descriptors;
 use crate::model::data::chan::{ChanPost, ChanThread, PostDescriptor, ThreadDescriptor};
+use crate::model::imageboards::parser::post_parser::PostParser;
 
 pub enum ThreadParseResult {
     Ok(ChanThread),
-    PartialParseFailed
+    PartialParseFailed,
+    FullParseFailed
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,33 +50,38 @@ struct Chan4ThreadFull {
     posts: Vec<Chan4PostFull>
 }
 
-pub fn parse(
-    thread_descriptor: &ThreadDescriptor,
-    last_processed_post: &Option<PostDescriptor>,
-    thread_json: &String
-) -> anyhow::Result<ThreadParseResult> {
-    if last_processed_post.is_some() {
+pub struct Chan4PostParser {}
+
+impl PostParser for Chan4PostParser {
+    fn parse(
+        &self,
+        thread_descriptor: &ThreadDescriptor,
+        last_processed_post: &Option<PostDescriptor>,
+        thread_json: &String
+    ) -> anyhow::Result<ThreadParseResult> {
+        if last_processed_post.is_some() {
+            info!(
+                "parse({}) parsing thread partially last_processed_post: {}, thread_json_len: {}",
+                thread_descriptor,
+                last_processed_post.clone().unwrap(),
+                thread_json.len()
+            );
+
+            return parse_thread_partial(
+                thread_descriptor,
+                last_processed_post,
+                thread_json
+            );
+        }
+
         info!(
-            "parse({}) parsing thread partially last_processed_post: {}, thread_json_len: {}",
+            "parse({}) parsing thread fully thread_json_len: {}",
             thread_descriptor,
-            last_processed_post.clone().unwrap(),
             thread_json.len()
         );
 
-        return parse_thread_partial(
-            thread_descriptor,
-            last_processed_post,
-            thread_json
-        );
+        return parse_thread_full(thread_json);
     }
-
-    info!(
-        "parse({}) parsing thread fully thread_json_len: {}",
-        thread_descriptor,
-        thread_json.len()
-    );
-
-    return parse_thread_full(thread_json);
 }
 
 fn parse_thread_full(thread_json: &String) -> anyhow::Result<ThreadParseResult> {

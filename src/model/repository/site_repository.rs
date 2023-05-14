@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use crate::model::data::chan::{PostDescriptor, SiteDescriptor, ThreadDescriptor};
 use crate::model::database::db::Database;
+use crate::model::imageboards::base_imageboard;
 use crate::model::imageboards::base_imageboard::{Imageboard, ThreadLoadResult};
 use crate::model::imageboards::chan4::Chan4;
 use crate::model::imageboards::dvach::Dvach;
 
-type ImageboardSynced = Arc<dyn Imageboard + Sync + Send>;
+pub type ImageboardSynced = Arc<dyn Imageboard + Sync + Send>;
 
 pub struct SiteRepository {
     sites: HashMap<String, ImageboardSynced>
@@ -66,7 +67,8 @@ impl SiteRepository {
 
         let imageboard = imageboard.unwrap();
 
-        return imageboard.load_thread(
+        return base_imageboard::load_thread(
+            &imageboard,
             http_client,
             database,
             thread_descriptor,
