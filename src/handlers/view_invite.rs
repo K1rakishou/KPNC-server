@@ -58,7 +58,7 @@ fn success(
                 <li>Enter {{host_address}} into Instance address input</li>
                 <li>Copy the user_id into UserId input</li>
                 <li>Click login</li>
-                <li>Use should be able to use push notifications for free for {{free_days_count}} days</li>
+                <li>You should be able to use push notifications for free for {{free_days_count}} days</li>
             </ul>
         </div>
     </body>
