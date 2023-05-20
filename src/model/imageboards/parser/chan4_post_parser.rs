@@ -10,7 +10,11 @@ use crate::model::imageboards::parser::post_parser::PostParser;
 pub enum ThreadParseResult {
     Ok(ChanThread),
     PartialParseFailed,
-    FullParseFailed
+    FullParseFailed,
+    ThreadDeletedOrClosed,
+    ThreadInaccessible,
+    ServerSentIncorrectData(String),
+    ServerError(i32, String)
 }
 
 #[derive(Debug, Deserialize)]

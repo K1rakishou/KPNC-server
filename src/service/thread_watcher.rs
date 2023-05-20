@@ -255,6 +255,25 @@ async fn process_thread(
 
             return Ok(());
         }
+        ThreadLoadResult::ThreadDeletedOrClosed => {
+            error!("process_thread({}) thread is deleted or closed", thread_descriptor);
+
+            post_repository::mark_thread_as_dead(database, thread_descriptor, true).await?;
+            return Ok(());
+        }
+        ThreadLoadResult::ThreadInaccessible => {
+            error!("process_thread({}) thread is inaccessible", thread_descriptor);
+            return Ok(());
+        }
+        ThreadLoadResult::ServerSentIncorrectData(message) => {
+            error!(
+                "process_thread({}) server sent incorrect data, reason: {}",
+                thread_descriptor,
+                message
+            );
+
+            return Ok(());
+        }
         ThreadLoadResult::ThreadWasNotModifiedSinceLastCheck => {
             info!(
                 "process_thread({}) content wasn't modified since last check, exiting",
@@ -271,6 +290,17 @@ async fn process_thread(
             );
 
             return Err(anyhow!("Failed to read ChanThread"));
+        }
+        ThreadLoadResult::ServerError(code, message) => {
+            let message = format!("ServerError code: {}, message: \'{}\'", code, message);
+
+            error!(
+                "process_thread({}) Server returned error: \'{}\'",
+                thread_descriptor,
+                message
+            );
+
+            return Err(anyhow!("Server returned an error: {}", message));
         }
     };
 

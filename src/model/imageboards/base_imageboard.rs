@@ -39,7 +39,11 @@ pub enum ThreadLoadResult {
     SiteNotSupported,
     HeadRequestBadStatusCode(u16),
     GetRequestBadStatusCode(u16),
-    FailedToReadChanThread(String)
+    ThreadDeletedOrClosed,
+    ThreadInaccessible,
+    FailedToReadChanThread(String),
+    ServerSentIncorrectData(String),
+    ServerError(i32, String)
 }
 
 #[async_recursion]
@@ -202,13 +206,20 @@ pub async fn load_thread(
             ).await;
         }
         ThreadParseResult::FullParseFailed => {
-            info!(
-                "load_thread({}) Failed to parse thread fully, exiting",
-                thread_descriptor
-            );
-
             let error_text = format!("Failed to parse thread {} fully", thread_descriptor);
             return Ok(ThreadLoadResult::FailedToReadChanThread(error_text));
+        }
+        ThreadParseResult::ThreadDeletedOrClosed => {
+            return Ok(ThreadLoadResult::ThreadDeletedOrClosed);
+        }
+        ThreadParseResult::ThreadInaccessible => {
+            return Ok(ThreadLoadResult::ThreadInaccessible);
+        }
+        ThreadParseResult::ServerSentIncorrectData(reason) => {
+            return Ok(ThreadLoadResult::ServerSentIncorrectData(reason));
+        }
+        ThreadParseResult::ServerError(code, message) => {
+            return Ok(ThreadLoadResult::ServerError(code, message));
         }
     };
 
