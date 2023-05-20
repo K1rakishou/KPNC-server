@@ -10,7 +10,6 @@ use std::sync::Arc;
 use anyhow::Context;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use lazy_static::lazy_static;
 use tokio::net::TcpListener;
 
 use crate::helpers::{logger, throttler};
@@ -20,6 +19,7 @@ use crate::model::repository::post_descriptor_id_repository;
 use crate::model::repository::site_repository::SiteRepository;
 use crate::router::{router, TestContext};
 use crate::service::fcm_sender::FcmSender;
+use crate::service::invites_cleanup;
 use crate::service::thread_watcher::ThreadWatcher;
 
 mod constants;
@@ -47,6 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .context("Failed to read FIREBASE_API_KEY from Environment")?;
     let master_password = env::var("MASTER_PASSWORD")
         .context("Failed to read MASTER_PASSWORD from Environment")?;
+    let host_address = env::var("HOST_ADDRESS")
+        .context("Failed to read HOST_ADDRESS from Environment")?;
 
     let num_cpus = num_cpus::get() as u32;
     let database = Database::new(connection_string, num_cpus).await?;
@@ -90,8 +92,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ).await.unwrap();
     });
 
+    let database_cloned_invites_cleanup = database.clone();
     tokio::task::spawn(async move {
-        throttler::cleanup_task().await;
+        invites_cleanup::invites_cleanup_task(&database_cloned_invites_cleanup).await;
+    });
+
+    tokio::task::spawn(async move {
+        throttler::throttler_cleanup_task().await;
     });
 
     info!("main() starting up server... done, waiting for connections...");
@@ -101,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let database_cloned_for_router = database.clone();
         let site_repository_cloned = site_repository.clone();
         let master_password_cloned = master_password.clone();
+        let host_address_cloned = host_address.clone();
 
         tokio::task::spawn(async move {
             http1::Builder::new()
@@ -112,6 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         return router(
                             test_context,
                             &master_password_cloned,
+                            &host_address_cloned,
                             &sock_addr,
                             request,
                             &database_cloned_for_router,

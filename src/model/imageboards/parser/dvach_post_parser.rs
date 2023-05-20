@@ -32,6 +32,7 @@ impl PostParser for DvachPostParser {
         last_processed_post: &Option<PostDescriptor>,
         thread_json: &String
     ) -> anyhow::Result<ThreadParseResult> {
+        // TODO: '{"error":{"code":-3,"message":"Тред не существует."},"result":0}'
         if last_processed_post.is_some() {
             info!(
                 "parse({}) parsing thread partially last_processed_post: {}, thread_json_len: {}",

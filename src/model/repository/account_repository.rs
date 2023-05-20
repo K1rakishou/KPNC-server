@@ -599,7 +599,7 @@ pub async fn retain_post_db_ids_belonging_to_account(
     return Ok(result_vec);
 }
 
-async fn get_account_from_database(
+pub async fn get_account_from_database(
     account_id: &AccountId,
     database: &Arc<Database>
 ) -> anyhow::Result<Option<Account>> {

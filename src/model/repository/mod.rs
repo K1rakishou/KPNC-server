@@ -7,3 +7,4 @@ pub mod post_descriptor_id_repository;
 pub mod post_reply_repository;
 pub mod post_watch_repository;
 pub mod logs_repository;
+pub mod invites_repository;

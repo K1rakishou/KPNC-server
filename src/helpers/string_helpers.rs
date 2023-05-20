@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use crate::model::repository::account_repository::{AccountId, FirebaseToken};
 
@@ -81,6 +82,41 @@ pub fn extract_site_name_from_domain(domain: &str) -> &str {
     let last_index = last_index.unwrap();
 
     return &domain[last_index + 1..];
+}
+
+pub fn query_to_params(query: &str) -> HashMap<String, String> {
+    let mut result_map = HashMap::<String, String>::new();
+
+    query
+        .split('&')
+        .for_each(|kv| {
+            let split = kv.split('=').collect::<Vec<&str>>();
+
+            let key = split.get(0).unwrap_or(&"");
+            if key.is_empty() {
+                return;
+            }
+
+            let value = split.get(1).unwrap_or(&"");
+
+            result_map.insert(key.to_string(), value.to_string());
+        });
+
+    return result_map;
+}
+
+pub fn insert_after_every_nth(input: &str, insert: &str, n: usize) -> String {
+    return input
+        .chars()
+        .enumerate()
+        .map(|(i, c)| {
+            return if (i + 1) % n == 0 {
+                format!("{}{}", c, insert)
+            } else {
+                c.to_string()
+            };
+        })
+        .collect();
 }
 
 #[test]

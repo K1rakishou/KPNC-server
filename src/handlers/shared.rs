@@ -73,6 +73,7 @@ pub fn error_response_str(error: &str) -> anyhow::Result<String> {
 pub trait ContentType {
     fn content_type(self, value: &str) -> Builder;
     fn json(self) -> Builder;
+    fn html(self) -> Builder;
 }
 
 impl ContentType for Builder {
@@ -82,6 +83,10 @@ impl ContentType for Builder {
 
     fn json(self) -> Builder {
         return self.content_type("application/json")
+    }
+
+    fn html(self) -> Builder {
+        return self.content_type("text/html")
     }
 }
 

@@ -7,4 +7,6 @@ pub mod watch_post;
 pub mod unwatch_post;
 pub mod update_message_delivered;
 pub mod get_logs;
+pub mod generate_invites;
+pub mod view_invite;
 pub mod shared;

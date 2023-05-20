@@ -27,11 +27,11 @@ impl VisitorInfo {
     }
 }
 
-pub async fn cleanup_task() {
-    info!("cleanup_task() start");
+pub async fn throttler_cleanup_task() {
+    info!("throttler_cleanup_task() start");
 
     loop {
-        info!("cleanup_task() cleaning up...");
+        info!("throttler_cleanup_task() cleaning up...");
 
         {
             let mut visitors_locked = VISITORS.write().await;
@@ -42,12 +42,12 @@ pub async fn cleanup_task() {
             }
         }
 
-        info!("cleanup_task() cleaning up... done, waiting...");
+        info!("throttler_cleanup_task() cleaning up... done, waiting...");
         tokio::time::sleep(Duration::from_secs(60)).await;
-        info!("cleanup_task() waiting... done");
+        info!("throttler_cleanup_task() waiting... done");
     }
 
-    info!("cleanup_task() end");
+    info!("throttler_cleanup_task() end");
 }
 
 pub async fn can_proceed(
@@ -98,6 +98,8 @@ fn init_request_limits() -> HashMap<String, usize> {
     result_map.insert("/get_account_info".to_string(), 15);
     result_map.insert("/watch_post".to_string(), 20);
     result_map.insert("/unwatch_post".to_string(), 20);
+    result_map.insert("/generate_invites".to_string(), 5);
+    result_map.insert("/view_invite".to_string(), 5);
     result_map.insert("/".to_string(), 30);
     result_map.insert("/favicon.ico".to_string(), 30);
 

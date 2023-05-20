@@ -18,6 +18,7 @@ pub struct TestContext {
 pub async fn router(
     test_context: Option<TestContext>,
     master_password: &String,
+    host_address: &String,
     sock_addr: &SocketAddr,
     request: Request<hyper::body::Incoming>,
     database: &Arc<Database>,
@@ -69,7 +70,8 @@ pub async fn router(
     match path {
         "/get_logs" |
         "/create_account" |
-        "/update_account_expiry_date" => {
+        "/update_account_expiry_date" |
+        "/generate_invites" => {
             if master_password != master_password_from_request {
                 info!(
                     "router() Client {} sent incorrect master password: \'{}\'",
@@ -118,6 +120,12 @@ pub async fn router(
         "/unwatch_post" => {
             handlers::unwatch_post::handle(query, body, database, site_repository).await
         },
+        "/generate_invites" => {
+            handlers::generate_invites::handle(query, body, database, host_address).await
+        }
+        "/view_invite" => {
+            handlers::view_invite::handle(query, body, database, host_address).await
+        }
         _ => {
             handlers::index::handle(query, body).await
         }
